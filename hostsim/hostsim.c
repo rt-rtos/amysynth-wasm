@@ -29,6 +29,7 @@
 #include "my_buttons.h"
 #include "input_dispatch.h"
 #include "harness.h"
+#include "project_xfer.h"
 #include "synth_ui.h"
 #include "sequencer_core.h"
 #include "seq_core_config.h"
@@ -60,6 +61,9 @@ extern int g_host_log;
 extern TaskHandle_t g_host_cur_task;
 
 #define BLOCK_FRAMES       AMY_BLOCK_SIZE
+/* An input line: a harness command or a project-transfer line, plus the
+ * "@<block> " or "cmd <offset> " in front of it. */
+#define HS_LINE_MAX        (PROJECT_XFER_LINE_MAX + 64)
 #define LONG_PRESS_MS      1500u   /* iot_button defaults (my_buttons.c) */
 #define SHORT_PRESS_MS     180u
 #define ENCODER_POLL_MS    20u     /* main.c encoder_task */
@@ -205,6 +209,15 @@ static void reply_to_console(const char *line)
     sb_add(&s_reply, "\n", 1);
 }
 
+/* Project-transfer replies go straight to the console: the reply to the
+ * last data line of a put comes later, from the UI slice that writes the
+ * slot, outside any command. */
+static void xfer_reply(const char *line)
+{
+    sb_add(&s_console, line, strlen(line));
+    sb_add(&s_console, "\n", 1);
+}
+
 /* One harness command line. Commands that only read state are not recorded;
  * in.btn / in.enc record themselves through the hooks. */
 static void run_command(const char *line)
@@ -217,7 +230,12 @@ static void run_command(const char *line)
     }
     s_reply.len = 0;
     capture_begin();
-    harness_exec(&s_hooks, line, reply_to_console);
+    if (line[0] == 'P' && line[1] == '>') {
+        /* Project transfer, as on the device's UART0 reader. */
+        project_xfer_line(line, xfer_reply);
+    } else {
+        harness_exec(&s_hooks, line, reply_to_console);
+    }
     capture_end();
     if (s_reply.len) sb_add(&s_console, s_reply.buf, s_reply.len);
 }
@@ -474,7 +492,7 @@ static int replay(const char *log_path, const char *outdir, const char *project)
     if (!lf) { fprintf(stderr, "cannot open %s\n", log_path); return 2; }
     log_line_t *lines = NULL;
     size_t n = 0, cap = 0;
-    char buf[HARNESS_LINE_MAX + 32];
+    char buf[HS_LINE_MAX];
     unsigned lineno = 0;
     while (fgets(buf, sizeof buf, lf)) {
         lineno++;
@@ -553,6 +571,8 @@ static int replay(const char *log_path, const char *outdir, const char *project)
     fclose(wav);
 
     write_frame(".", "final");
+    FILE *cf = fopen("console.txt", "w");
+    if (cf) { fwrite(s_console.buf ? s_console.buf : "", 1, s_console.len, cf); fclose(cf); }
     s_console.len = 0;
     run_command("st.seqdump");
     FILE *f = fopen("seqdump.txt", "w");
@@ -690,7 +710,7 @@ static int serve(const char *workdir)
     }
     session_boot();
 
-    char line[HARNESS_LINE_MAX + 64];
+    char line[HS_LINE_MAX];
     while (fgets(line, sizeof line, stdin)) {
         line[strcspn(line, "\r\n")] = '\0';
         if (strcmp(line, "quit") == 0) break;
@@ -756,7 +776,7 @@ EMSCRIPTEN_KEEPALIVE void hs_boot(void)
 EMSCRIPTEN_KEEPALIVE int hs_step(unsigned blocks, const char *input)
 {
     if (blocks == 0 || blocks > 4096) return -1;
-    char line[HARNESS_LINE_MAX + 64];
+    char line[HS_LINE_MAX];
     for (const char *p = input; p && *p;) {
         const char *nl = strchr(p, '\n');
         size_t n = nl ? (size_t)(nl - p) : strlen(p);

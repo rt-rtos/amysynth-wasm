@@ -77,9 +77,16 @@ Without `end` the replay stops one second after the last line. Button ids are
 
 Outputs in `<outdir>`, which is also the working directory (projects go to
 `<outdir>/proj`, emptied at start): `out.wav` (from block 0), the shots,
-`final.png` / `final.txt`, `seqdump.txt` (`st.seqdump` at the end) and
+`final.png` / `final.txt`, `seqdump.txt` (`st.seqdump` at the end),
+`console.txt` (command replies and dumps, `H<` and `P<` lines included) and
 `record.log`. `[project.amp]` is loaded into slot 0 after boot, before
 block 0.
+
+Lines starting `P>` go to the firmware's project-transfer core
+(`components/project_xfer`, protocol in its `project_xfer.h`) as on the
+device's UART0 reader; the rest go to the harness. The reply to the last data
+line of a `put` comes from the UI slice that writes the slot, so it lands in
+the console a slice (10 ms of audio) after that line.
 
 `record.log` is the dispatcher-level form of the input: every button event
 and encoder call `input_dispatch_*` received, plus state-changing harness

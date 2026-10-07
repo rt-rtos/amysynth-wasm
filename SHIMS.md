@@ -9,13 +9,13 @@ submodule, with no patches and no host-only branches.
 
 | | Files | Lines of code |
 |---|---|---|
-| Firmware application code compiled unchanged (`components/`, `main/input_dispatch.c`; AMY and U8g2 not counted) | 83 `.c` | 24,240 |
-| Firmware application code left out (drivers, tasks, USB, BLE, diagnostics; listed below) | 23 `.c` | 3,122 |
+| Firmware application code compiled unchanged (`components/`, `main/input_dispatch.c`; AMY and U8g2 not counted) | 84 `.c` | 24,576 |
+| Firmware application code left out (drivers, tasks, USB, BLE, diagnostics; listed below) | 25 `.c` | 3,224 |
 | `stubs/`: headers standing in for ESP-IDF, FreeRTOS and driver headers | 18 `.h` | 149 |
 | `host/`: host implementations of what the stubs declare, plus two host tools | 4 `.c`, 1 `.h` | 379 |
-| `hostsim/hostsim.c`: the program in place of `main.c` | 1 `.c` | 673 |
+| `hostsim/hostsim.c`: the program in place of `main.c` | 1 `.c` | 686 |
 
-Counted with `scc` at firmware `9e981d12`. Of `host/`, `frame_out.c` (~200
+Counted with `scc` at firmware `23829a72`. Of `host/`, `frame_out.c` (~200
 lines, the PNG and text frame writer) is only in the native build.
 
 Two checks anyone can run from the repo root:
@@ -37,7 +37,7 @@ flowchart TB
         engine["synth_core: sequencer, voices, FX, projects"]
         ui["synth_ui + display renderers"]
         disp["main/input_dispatch.c"]
-        harness["harness_exec.c"]
+        harness["harness_exec.c, project_xfer.c"]
         store["project_store.c, project_tlv.c"]
         amy["AMY (copy, 48 kHz line set)"]
     end
@@ -120,6 +120,11 @@ The UI cadence is not restated: `hostsim.c` calls the public
 `synth_ui_slice()` with `SYNTH_UI_SLICE_MS` and `SYNTH_UI_SLICES_PER_FRAME`
 from `synth_ui.h`.
 
+Command lines take the device's routing: a line starting `P>` goes to the
+firmware's project-transfer core (`project_xfer_line()`), anything else to
+`harness_exec()`, as the device's UART0 reader does. hostsim does that split
+itself because the reader (`project_xfer_uart.c`) is the device's.
+
 Functions `hostsim.c` defines in place of firmware ones:
 
 | Function | Device | Host |
@@ -149,7 +154,7 @@ Functions `hostsim.c` defines in place of firmware ones:
   device build's warning set (`-Wall -Wextra` with its exceptions, as in
   the firmware's compile commands), without `-Werror`; the build prints what
   they report. This repo's own sources compile with `-Wall -Wextra`. At
-  firmware `9e981d12`:
+  firmware `23829a72`:
   - gcc 13.3 (native): 2. An unused variable in `display_dist.c`
     (`draw_curve`), which the device build reports too; and a possible
     truncation of the developer screen's dropout counter text
@@ -167,13 +172,15 @@ Functions `hostsim.c` defines in place of firmware ones:
 
 | Firmware code | Lines | Host replacement |
 |---|---|---|
-| `main/main.c`, `render_clock.c`, `render_clock_i2s.c` | 668 | `hostsim.c` |
+| `main/main.c`, `render_clock.c`, `render_clock_i2s.c` | 671 | `hostsim.c` |
 | `components/my_buttons`, `rotary_encoder`, `status_led` | 402 | key and wheel input in `hostsim.c`; no LED |
 | `components/display/priv_i2c_u8g2.c`, `display_flush.c`, `display_flush_runs.c` | 332 | the frame buffer, read directly |
 | `components/usb_audio/usb_audio.c`, `components/usb_device_uac` | 758 | none; audio goes to WAV or the page |
 | `components/wireless` | 437 | none (`CONFIG_SYNTH_WIRELESS` off) |
 | `components/diagnostics` | 481 | none; `diag_heap.h` and `diag_report.h` stubbed |
 | `components/project_store/project_fs.c` (LittleFS mount) | 44 | `stubs/project_fs.h` |
+| `components/harness/harness.c` (hands UART0 lines to the harness) | 25 | `hostsim.c` calls `harness_exec()` itself |
+| `components/project_xfer/project_xfer_uart.c` (the UART0 reader) | 74 | `hostsim.c` sends `P>` lines to `project_xfer_line()` |
 
 The rest of `project_store` (`project_store.c`, `project_tlv.c`) and
 `usb_audio_watchdog.c` are compiled.

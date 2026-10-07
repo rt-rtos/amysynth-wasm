@@ -69,7 +69,8 @@ CF=(-O2 -g -std=gnu11 -DAMY_WAVETABLE -DGAMMA9001 -DAMY_USE_FIXEDPOINT= -DHOSTSI
     -I"$FW/components/seq_clamp" -I"$FW/components/project_store/include"
     -I"$FW/components/usb_audio/include" -I"$FW/components/wireless/include"
     -I"$FW/components/diagnostics/include" -I"$FW/components/my_buttons/include"
-    -I"$FW/components/harness/include" -I"$FW/main" -I"$U8")
+    -I"$FW/components/harness/include" -I"$FW/components/project_xfer/include"
+    -I"$FW/main" -I"$U8")
 # Source paths in assert messages (__FILE__) ship in the wasm: keep them
 # relative to the firmware or to this repo.
 [ $MODE = wasm ] && CF+=(-g0 -ffile-prefix-map="$OUT/=" -ffile-prefix-map="$FW/="
@@ -148,6 +149,9 @@ done
 compile "$OUT/obj/ui/input_dispatch.o" "$FW/main/input_dispatch.c" "${FW_WARN[@]}"
 compile "$OUT/obj/ui/usb_audio_watchdog.o" "$FW/components/usb_audio/usb_audio_watchdog.c" "${FW_WARN[@]}"
 compile "$OUT/obj/ui/harness_exec.o" "$FW/components/harness/harness_exec.c" "${FW_WARN[@]}" -DCONFIG_DEV_SERIAL_HARNESS=1
+# The project-transfer core; its UART0 transport (project_xfer_uart.c) is the
+# device's.
+compile "$OUT/obj/ui/project_xfer.o" "$FW/components/project_xfer/project_xfer.c" "${FW_WARN[@]}"
 for src in "$U8"/*.c; do compile "$OUT/obj/u8g2/$(basename "${src%.c}").o" "$src" "${FW_WARN[@]}"; done
 
 compile "$OUT/obj/host/host_glue.o" "$HOST/host_glue.c" -Wall -Wextra
