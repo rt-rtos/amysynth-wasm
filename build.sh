@@ -78,6 +78,11 @@ CF=(-O2 -g -std=gnu11 -DAMY_WAVETABLE -DGAMMA9001 -DAMY_USE_FIXEDPOINT= -DHOSTSI
                         -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
 # shellcheck disable=SC2206
 [ -n "${HOSTSIM_CFLAGS:-}" ] && CF+=(${HOSTSIM_CFLAGS})
+# Firmware sources compile with the warning set of the device build (its
+# compile commands), without -Werror. This repo's own sources take
+# -Wall -Wextra.
+FW_WARN=(-Wall -Wextra -Wno-enum-conversion -Wno-sign-compare -Wno-unused-parameter)
+[ $CC = gcc ] && FW_WARN+=(-Wno-old-style-declaration)
 
 NJ=$(nproc)
 FAILED="$OUT/obj/failed"
@@ -103,7 +108,7 @@ if [ $MODE = wasm ]; then
     AMY_MODS=("${AMY_MODS[@]/libminiaudio-audio}")
 fi
 for m in "${AMY_MODS[@]}"; do
-    [ -n "$m" ] && compile "$OUT/obj/amy/$m.o" "$OUT/amy/$m.c" -w "${AMY_CF[@]}"
+    [ -n "$m" ] && compile "$OUT/obj/amy/$m.o" "$OUT/amy/$m.c" "${FW_WARN[@]}" "${AMY_CF[@]}"
 done
 
 # The engine, plus what the UI reaches.
@@ -129,24 +134,24 @@ fi
 SC_SRCS+=("$TPL_C")
 for f in "${SC_SRCS[@]}"; do
     src=$f; [[ $f = /* ]] || src=$SC/$f
-    compile "$OUT/obj/sc/$(basename "${f%.c}").o" "$src" -w
+    compile "$OUT/obj/sc/$(basename "${f%.c}").o" "$src" "${FW_WARN[@]}"
 done
 
 # UI: every synth_ui source, the display renderers without the panel driver
 # and its flush (hostsim keeps the buffer instead), the dispatcher, the
 # harness interpreter.
-for src in "$SC"/synth_ui/*.c; do compile "$OUT/obj/ui/$(basename "${src%.c}").o" "$src" -w; done
+for src in "$SC"/synth_ui/*.c; do compile "$OUT/obj/ui/$(basename "${src%.c}").o" "$src" "${FW_WARN[@]}"; done
 for src in "$DISP"/*.c; do
     case $(basename "$src") in priv_i2c_u8g2.c|display_flush.c|display_flush_runs.c) continue;; esac
-    compile "$OUT/obj/ui/$(basename "${src%.c}").o" "$src" -w
+    compile "$OUT/obj/ui/$(basename "${src%.c}").o" "$src" "${FW_WARN[@]}"
 done
-compile "$OUT/obj/ui/input_dispatch.o" "$FW/main/input_dispatch.c" -w
-compile "$OUT/obj/ui/usb_audio_watchdog.o" "$FW/components/usb_audio/usb_audio_watchdog.c" -w
-compile "$OUT/obj/ui/harness_exec.o" "$FW/components/harness/harness_exec.c" -w -DCONFIG_DEV_SERIAL_HARNESS=1
-for src in "$U8"/*.c; do compile "$OUT/obj/u8g2/$(basename "${src%.c}").o" "$src" -w; done
+compile "$OUT/obj/ui/input_dispatch.o" "$FW/main/input_dispatch.c" "${FW_WARN[@]}"
+compile "$OUT/obj/ui/usb_audio_watchdog.o" "$FW/components/usb_audio/usb_audio_watchdog.c" "${FW_WARN[@]}"
+compile "$OUT/obj/ui/harness_exec.o" "$FW/components/harness/harness_exec.c" "${FW_WARN[@]}" -DCONFIG_DEV_SERIAL_HARNESS=1
+for src in "$U8"/*.c; do compile "$OUT/obj/u8g2/$(basename "${src%.c}").o" "$src" "${FW_WARN[@]}"; done
 
-compile "$OUT/obj/host/host_glue.o" "$HOST/host_glue.c" -w
-compile "$OUT/obj/host/host_pump.o" "$HOST/host_pump.c" -w
+compile "$OUT/obj/host/host_glue.o" "$HOST/host_glue.c" -Wall -Wextra
+compile "$OUT/obj/host/host_pump.o" "$HOST/host_pump.c" "${FW_WARN[@]}"   # compiles amy_helpers.c
 [ $MODE = wasm ] || compile "$OUT/obj/host/frame_out.o" "$HOST/frame_out.c" -Wall -Wextra
 for src in "$H"/*.c; do
     compile "$OUT/obj/host/$(basename "${src%.c}").o" "$src" -Wall -Wextra -DCONFIG_DEV_SERIAL_HARNESS=1
@@ -157,6 +162,10 @@ if [ -s "$FAILED" ]; then
     while read -r src; do echo "== $src" >&2; head -20 "$OUT/obj/"*/"$(basename "${src%.c}").o.err" >&2; done < "$FAILED"
     exit 1
 fi
+# The warnings of the objects as they stand (an object not rebuilt keeps the
+# ones from when it was compiled).
+WARNED=$(find "$OUT/obj" -name '*.err' -size +0 | sort)
+[ -n "$WARNED" ] && { echo "warnings:" >&2; cat $WARNED >&2; }
 
 OBJS=("$OUT"/obj/host/*.o "$OUT"/obj/ui/*.o "$OUT"/obj/sc/*.o "$OUT"/obj/u8g2/*.o "$OUT"/obj/amy/*.o)
 if [ $MODE != wasm ]; then

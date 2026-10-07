@@ -145,10 +145,23 @@ Functions `hostsim.c` defines in place of firmware ones:
   In the wasm build AMY is compiled with `__EMSCRIPTEN__` undefined and with
   upstream AMY's `AMY_NO_MINIAUDIO` and `AMY_HOST_MIDI` switches, so it takes
   its native host path instead of its own web build.
-- **Warnings.** Firmware sources compile with `-w`; the device build carries
-  its own warning set, and the host compilers (gcc, clang via emcc) would
-  report against different headers. This repo's own sources compile with
-  `-Wall -Wextra`.
+- **Warnings.** Firmware sources, AMY and U8g2 included, compile with the
+  device build's warning set (`-Wall -Wextra` with its exceptions, as in
+  the firmware's compile commands), without `-Werror`; the build prints what
+  they report. This repo's own sources compile with `-Wall -Wextra`. At
+  firmware `3fa0d0cc`:
+  - gcc 13.3 (native): 2. An unused variable in `display_dist.c`
+    (`draw_curve`), which the device build reports too; and a possible
+    truncation of the developer screen's dropout counter text
+    (`ui_screen_dev.c`, `snprintf` into 48 bytes), which the device build,
+    with `-Werror`, does not report.
+  - clang (emcc 6.0.11): 20. The same unused variable; GCC's
+    `optimize` attribute on `sequencer_core_lfo_service()`, which clang
+    ignores, so the browser build compiles that function at the module's
+    `-O2`; 14 rows of `ui_view_table` (`ui_view_resolve.c`) that leave their
+    trailing callbacks to zero-initialization, which clang's
+    `-Wmissing-field-initializers` reports and gcc's does not; 4 variables
+    set but not used in U8g2 drivers for panels the device does not have.
 - **Generated inputs.** The template table comes from the firmware's
   `gen_templates.py`, as in the device build. `drums.bin` comes from the
   samples of the AMY release the firmware pins (`tools/gen-drums.py`).
