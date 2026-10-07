@@ -9,13 +9,13 @@ submodule, with no patches and no host-only branches.
 
 | | Files | Lines of code |
 |---|---|---|
-| Firmware application code compiled unchanged (`components/`, `main/input_dispatch.c`; AMY and U8g2 not counted) | 83 `.c` | 24,236 |
+| Firmware application code compiled unchanged (`components/`, `main/input_dispatch.c`; AMY and U8g2 not counted) | 83 `.c` | 24,240 |
 | Firmware application code left out (drivers, tasks, USB, BLE, diagnostics; listed below) | 23 `.c` | 3,122 |
 | `stubs/`: headers standing in for ESP-IDF, FreeRTOS and driver headers | 18 `.h` | 149 |
 | `host/`: host implementations of what the stubs declare, plus two host tools | 4 `.c`, 1 `.h` | 379 |
 | `hostsim/hostsim.c`: the program in place of `main.c` | 1 `.c` | 673 |
 
-Counted with `scc` at firmware `3fa0d0cc`. Of `host/`, `frame_out.c` (~200
+Counted with `scc` at firmware `9e981d12`. Of `host/`, `frame_out.c` (~200
 lines, the PNG and text frame writer) is only in the native build.
 
 Two checks anyone can run from the repo root:
@@ -149,18 +149,15 @@ Functions `hostsim.c` defines in place of firmware ones:
   device build's warning set (`-Wall -Wextra` with its exceptions, as in
   the firmware's compile commands), without `-Werror`; the build prints what
   they report. This repo's own sources compile with `-Wall -Wextra`. At
-  firmware `3fa0d0cc`:
+  firmware `9e981d12`:
   - gcc 13.3 (native): 2. An unused variable in `display_dist.c`
     (`draw_curve`), which the device build reports too; and a possible
     truncation of the developer screen's dropout counter text
     (`ui_screen_dev.c`, `snprintf` into 48 bytes), which the device build,
     with `-Werror`, does not report.
-  - clang (emcc 6.0.11): 20. The same unused variable; GCC's
-    `optimize` attribute on `sequencer_core_lfo_service()`, which clang
-    ignores, so the browser build compiles that function at the module's
-    `-O2`; 14 rows of `ui_view_table` (`ui_view_resolve.c`) that leave their
-    trailing callbacks to zero-initialization, which clang's
-    `-Wmissing-field-initializers` reports and gcc's does not; 4 variables
+  - clang (emcc 6.0.11): 6. The same unused variable; GCC's `optimize`
+    attribute on `sequencer_core_lfo_service()`, which clang ignores, so the
+    browser build compiles that function at the module's `-O2`; 4 variables
     set but not used in U8g2 drivers for panels the device does not have.
 - **Generated inputs.** The template table comes from the firmware's
   `gen_templates.py`, as in the device build. `drums.bin` comes from the
