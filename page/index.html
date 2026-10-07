@@ -24,6 +24,8 @@
   .chords button { font-size:11px; padding:2px 6px; }
   #console { height:220px; overflow:auto; white-space:pre-wrap; color:var(--text); background:#101216; padding:6px; border-radius:4px; }
   #record { height:160px; overflow:auto; white-space:pre; color:var(--dim); background:#101216; padding:6px; border-radius:4px; }
+  #projList { display:grid; grid-template-columns:auto 1fr auto auto; gap:4px 14px; align-items:center; margin-top:8px; }
+  #projList button { padding:2px 8px; }
   #cmd { flex:1; background:#262a32; color:var(--text); border:1px solid var(--line); border-radius:4px; padding:3px 6px; font:inherit; }
   table { border-collapse:collapse; } td, th { padding:1px 10px 1px 0; vertical-align:top; text-align:left; }
   td:first-child { color:var(--dim); white-space:nowrap; }
@@ -123,6 +125,13 @@
     </section>
   </div>
   <div class="bottom">
+    <section id="projSection" hidden>
+      <details id="projBox">
+        <summary>PROJECTS - saved slots, exported as .amp files a board loads</summary>
+        <div id="projList"></div>
+        <div class="row"><button id="projRefresh">Refresh</button></div>
+      </details>
+    </section>
     <section>
       <details id="consoleBox">
         <summary>CONSOLE - harness commands (st.seqdump, tr.play, tr.stop, tr.bpm 120, in.btn id=5 act=click ...)</summary>
@@ -500,7 +509,7 @@ function apply(st) {
   if (st.frame) drawFrame(bytesOf(st.frame));
   followView(st.view);
   showLoad(st.load);
-  if (st.console) appendConsole(st.console);
+  if (st.console) { appendConsole(st.console); projectReplies(st.console); }
   if (st.record) { const r = $('record'); r.textContent += st.record; r.scrollTop = r.scrollHeight; }
   simMs = st.ms;
   if (actx && st.audio) play(bytesOf(st.audio));
@@ -579,6 +588,61 @@ $('cmd').addEventListener('keydown', e => {
 });
 $('dump').onclick = () => sendCmd('st.seqdump');
 $('clear').onclick = () => { $('console').textContent = ''; };
+
+/* ── projects ────────────────────────────────────────────────────────────
+ * The list is the firmware's: "P> ls" goes to its project-transfer core, as
+ * on a board's UART0, and the "P< slot <n> <size> <ver> <name>" lines come
+ * back in the console text. Export reads the slot file from the module's
+ * filesystem, so the download is byte for byte what a board stores. Only the
+ * in-page backend has the files (readProject). */
+let projRows = null;   /* collecting an ls answer; null when none is due */
+const slotName = n => `P${String(n).padStart(2, '0')}`;
+function refreshProjects() {
+  if (!running || paused) { $('projList').textContent = 'Power on to list the saved projects.'; return; }
+  projRows = [];
+  queue('cmd P> ls');
+}
+function projectReplies(text) {
+  if (projRows === null) return;
+  for (const m of text.matchAll(/^P< (?:slot (\d+) (\d+) \d+ (.*)|(ok ls|err)\b.*)$/gm)) {
+    if (m[1] !== undefined) { projRows.push({ slot: +m[1], size: +m[2], name: m[3] }); continue; }
+    showProjects(m[4] === 'ok ls' ? projRows : null, m[0]);
+    projRows = null;
+    return;
+  }
+}
+function showProjects(rows, reply) {
+  const list = $('projList');
+  list.innerHTML = '';
+  if (!rows) { list.textContent = reply; return; }
+  if (!rows.length) { list.textContent = 'No saved projects yet: save one on the device, Menu -> Projects.'; return; }
+  for (const r of rows) {
+    for (const text of [slotName(r.slot), r.name, `${(r.size / 1024).toFixed(1)} KB`]) {
+      const cell = document.createElement('div');
+      cell.textContent = text;
+      list.append(cell);
+    }
+    const b = document.createElement('button');
+    b.textContent = 'Export';
+    b.onclick = () => exportProject(r);
+    list.append(b);
+  }
+}
+async function exportProject(r) {
+  try {
+    const bytes = await backend.readProject(r.slot);
+    /* Device names are file-name safe; a corrupt slot reads "<corrupt>". */
+    const name = /^[A-Z0-9 -]+$/.test(r.name) ? r.name : slotName(r.slot);
+    saveBlob(new Blob([bytes], { type: 'application/octet-stream' }), `${name}.amp`);
+  } catch (e) {
+    $('err').textContent = `Export ${slotName(r.slot)}: ${e.message || e}`;
+  }
+}
+if (backend.readProject) {
+  $('projSection').hidden = false;
+  $('projBox').addEventListener('toggle', () => { if ($('projBox').open) refreshProjects(); });
+  $('projRefresh').onclick = refreshProjects;
+}
 
 /* ── template picker ─────────────────────────────────────────────────────
  * The built-in templates come from the firmware: "pr.tpl" prints one

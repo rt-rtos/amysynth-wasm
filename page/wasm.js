@@ -2,6 +2,8 @@
  * to WebAssembly run in this page. Same interface as the page's HTTP backend:
  * step(blocks, inputLines) resolves to a step answer, restart() boots a fresh
  * instance, log() is the recorded input since boot, about() a status line.
+ * readProject(slot), which the HTTP backend lacks, returns a saved project
+ * file's bytes.
  *
  * The module and its data are fetched once; a reboot instantiates them again
  * from memory, so nothing is fetched after the first load. Saved projects
@@ -94,6 +96,12 @@ window.EMU_WASM = (() => {
       return this.step(1, []);
     },
     async log() { return log.join('\n') + '\n'; },
+    /* The slot file as the firmware's project store wrote it (Pnn.amp in the
+     * module filesystem's /proj): the same bytes a board stores. */
+    async readProject(slot) {
+      if (!mod) throw new Error('not running');
+      return mod.FS.readFile(`/proj/P${String(slot).padStart(2, '0')}.amp`);
+    },
     about() {
       const where = persistent === null ? 'Projects: starting'
         : persistent ? 'Projects are saved in this browser (IndexedDB)'
