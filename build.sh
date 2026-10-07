@@ -62,7 +62,7 @@ fi
 
 # stubs/ stands in for the ESP-IDF, FreeRTOS and driver headers the firmware
 # includes (SHIMS.md).
-CF=(-O2 -g -std=gnu11 -DAMY_WAVETABLE -DGAMMA9001 -DAMY_USE_FIXEDPOINT -DHOSTSIM
+CF=(-O2 -g -std=gnu11 -DAMY_WAVETABLE -DGAMMA9001 -DAMY_USE_FIXEDPOINT= -DHOSTSIM
     -DMALLOC_CAP_SPIRAM=0 -DMALLOC_CAP_8BIT=0 -DHOSTSIM_DRUMS="\"$DRUMS_AT\""
     -I"$R/stubs" -I"$HOST" -I"$R/config" -I"$OUT/amy" -I"$SC" -I"$SC/include"
     -I"$SC/sequencer_core" -I"$SC/project" -I"$SC/synth_ui" -I"$DISP"
