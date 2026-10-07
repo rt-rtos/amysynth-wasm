@@ -9,13 +9,13 @@ submodule, with no patches and no host-only branches.
 
 | | Files | Lines of code |
 |---|---|---|
-| Firmware application code compiled unchanged (`components/`, `main/input_dispatch.c`; AMY and U8g2 not counted) | 84 `.c` | 24,576 |
-| Firmware application code left out (drivers, tasks, USB, BLE, diagnostics; listed below) | 25 `.c` | 3,224 |
+| Firmware application code compiled unchanged (`components/`, `main/input_dispatch.c`; AMY and U8g2 not counted) | 84 `.c` | 24,645 |
+| Firmware application code left out (drivers, tasks, USB, BLE, diagnostics; listed below) | 25 `.c` | 3,225 |
 | `stubs/`: headers standing in for ESP-IDF, FreeRTOS and driver headers | 18 `.h` | 149 |
 | `host/`: host implementations of what the stubs declare, plus two host tools | 4 `.c`, 1 `.h` | 379 |
 | `hostsim/hostsim.c`: the program in place of `main.c` | 1 `.c` | 686 |
 
-Counted with `scc` at firmware `23829a72`. Of `host/`, `frame_out.c` (~200
+Counted with `scc` at firmware `d043e6eb`. Of `host/`, `frame_out.c` (~200
 lines, the PNG and text frame writer) is only in the native build.
 
 Two checks anyone can run from the repo root:
@@ -154,7 +154,7 @@ Functions `hostsim.c` defines in place of firmware ones:
   device build's warning set (`-Wall -Wextra` with its exceptions, as in
   the firmware's compile commands), without `-Werror`; the build prints what
   they report. This repo's own sources compile with `-Wall -Wextra`. At
-  firmware `23829a72`:
+  firmware `d043e6eb`:
   - gcc 13.3 (native): 2. An unused variable in `display_dist.c`
     (`draw_curve`), which the device build reports too; and a possible
     truncation of the developer screen's dropout counter text
@@ -180,7 +180,7 @@ Functions `hostsim.c` defines in place of firmware ones:
 | `components/diagnostics` | 481 | none; `diag_heap.h` and `diag_report.h` stubbed |
 | `components/project_store/project_fs.c` (LittleFS mount) | 44 | `stubs/project_fs.h` |
 | `components/harness/harness.c` (hands UART0 lines to the harness) | 25 | `hostsim.c` calls `harness_exec()` itself |
-| `components/project_xfer/project_xfer_uart.c` (the UART0 reader) | 74 | `hostsim.c` sends `P>` lines to `project_xfer_line()` |
+| `components/project_xfer/project_xfer_uart.c` (the UART0 reader) | 75 | `hostsim.c` sends `P>` lines to `project_xfer_line()` |
 
 The rest of `project_store` (`project_store.c`, `project_tlv.c`) and
 `usb_audio_watchdog.c` are compiled.
