@@ -99,11 +99,3 @@ uint32_t esp_rom_crc32_le(uint32_t crc, const uint8_t *buf, uint32_t len)
 }
 
 void delay_ms(uint32_t ms) { (void)ms; }
-
-/* synth_ui surface the engine reaches into (synth_ui_state.c / project load);
- * hostsim links the real one. */
-#ifndef HOSTSIM
-#include "sequencer_core.h"
-uint16_t seq_get_bpm(void) { return sequencer_core_get_bpm(); }
-void synth_ui_reload_mirror_from_core(void) { }
-#endif

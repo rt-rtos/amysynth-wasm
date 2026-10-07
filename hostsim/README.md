@@ -44,9 +44,9 @@ The output watchdog (`usb_audio_watchdog.c`) is the firmware's; hostsim
 gives it `usb_audio_peek_levels()` over a ring of the last rendered output,
 so the CLIP and LOUD badges come and go as on the device.
 
-Stood in for (beside the FreeRTOS, partition and log shims in
-`host/stubs`): the panel (`display_flush()` keeps the u8g2 buffer,
-`i2c_u8g2_service()` reports a present panel), `core_load_last()` and
+Stood in for (beside the headers in `stubs/`; all of it in `../SHIMS.md`):
+the panel (`display_flush()` keeps the u8g2 buffer, `i2c_u8g2_service()`
+returns what a present panel returns), `core_load_last()` and
 `dropout_stats_get()` (no data).
 The host Kconfig is `config/sdkconfig.h`, the device's with
 `CONFIG_SYNTH_WIRELESS` cleared: no BLE page, badge or live-play voice. The

@@ -1,6 +1,7 @@
 #pragma once
-/* Host shim for hostsim: the task surface of host/stubs, with the tick count
- * taken from audio time (1 tick = 1 ms, portTICK_PERIOD_MS 1). */
+/* Host shim: task creation hands out handles and runs nothing (hostsim
+ * calls the task bodies' work itself); the tick count is audio time
+ * (1 tick = 1 ms, portTICK_PERIOD_MS 1, hostsim.c). */
 #include "freertos/FreeRTOS.h"
 BaseType_t xTaskCreatePinnedToCore(TaskFunction_t fn, const char *name, uint32_t stack, void *arg, UBaseType_t prio, TaskHandle_t *out, BaseType_t core);
 BaseType_t xTaskCreate(TaskFunction_t fn, const char *name, uint32_t stack, void *arg, UBaseType_t prio, TaskHandle_t *out);

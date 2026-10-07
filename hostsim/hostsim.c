@@ -52,7 +52,6 @@
 #include "frame_out.h"
 #include "usb_audio.h"
 #include "load_model.c"
-#include "synth_ui_internal.h"
 
 extern int host_drums_load(const char *path);
 extern esp_partition_t g_host_drums_part;
@@ -461,7 +460,6 @@ static bool load_project_file(const char *src)
     fclose(in);
     fclose(out);
     if (!project_snapshot_load(0)) { fprintf(stderr, "LOAD FAILED\n"); return false; }
-    synth_ui_reload_mirror_from_core();
     host_pump_drain();
     return true;
 }

@@ -60,11 +60,11 @@ if [ ! -f "$DRUMS" ] || [ "$MAP" -nt "$DRUMS" ]; then
 fi
 [ -n "$DRUMS_AT" ] || DRUMS_AT=$DRUMS
 
-# hostsim/stubs shadows host/stubs (tick clock, esp_timer) and the display
-# driver header.
+# stubs/ stands in for the ESP-IDF, FreeRTOS and driver headers the firmware
+# includes (SHIMS.md).
 CF=(-O2 -g -std=gnu11 -DAMY_WAVETABLE -DGAMMA9001 -DAMY_USE_FIXEDPOINT -DHOSTSIM
     -DMALLOC_CAP_SPIRAM=0 -DMALLOC_CAP_8BIT=0 -DHOSTSIM_DRUMS="\"$DRUMS_AT\""
-    -I"$H/stubs" -I"$HOST/stubs" -I"$HOST" -I"$R/config" -I"$OUT/amy" -I"$SC" -I"$SC/include"
+    -I"$R/stubs" -I"$HOST" -I"$R/config" -I"$OUT/amy" -I"$SC" -I"$SC/include"
     -I"$SC/sequencer_core" -I"$SC/project" -I"$SC/synth_ui" -I"$DISP"
     -I"$FW/components/seq_clamp" -I"$FW/components/project_store/include"
     -I"$FW/components/usb_audio/include" -I"$FW/components/wireless/include"
