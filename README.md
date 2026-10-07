@@ -6,11 +6,12 @@ logs, a step protocol over stdin), and with Emscripten as the static site at
 <https://rt-rtos.github.io/amysynth-web/>.
 
 The firmware is the `firmware` submodule, compiled as it is. This repo holds
-only what the device has and a host does not: FreeRTOS, partition and log
-shims (`host/stubs`, `hostsim/stubs`), the program that drives the firmware's
-boot, input and render in place of its tasks (`hostsim/hostsim.c`), and the
-page. The firmware commit the submodule pins is the one the site runs, and
-the page shows it.
+only what the device has and a host does not: headers standing in for
+ESP-IDF, FreeRTOS and the board's drivers (`stubs/`), their host
+implementations (`host/`), the program that drives the firmware's boot,
+input and render in place of its tasks (`hostsim/hostsim.c`), and the page.
+`SHIMS.md` lists every one of them and what it changes. The firmware commit
+the submodule pins is the one the site runs, and the page shows it.
 
 ```mermaid
 flowchart LR
@@ -21,7 +22,7 @@ flowchart LR
         tpl["project/templates/*.py"]
     end
     subgraph here["this repo"]
-        shims["host/, hostsim/ (stubs, glue, hostsim.c)"]
+        shims["stubs/, host/, hostsim/hostsim.c"]
         cfg["config/sdkconfig.h"]
         page["page/ (index.html, wasm.js)"]
         gen["tools/gen-drums.py"]
