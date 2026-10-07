@@ -1,0 +1,29 @@
+/* Shared look of the lab pages. Page-specific rules stay in the page. */
+:root { --bg:#14161a; --panel:#1c1f25; --line:#2c313a; --text:#d8dce3; --dim:#8a93a3;
+        --a:#5fb3ff; --m:#ffc857; --b:#ff7096; --wave:#f2f4f8; --bad:#ff6b6b; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text);
+       font:13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+nav { padding:8px 12px 0; color:var(--dim); }
+main { display:grid; grid-template-columns: 400px minmax(0, 1fr); gap:12px; padding:12px; }
+main.index { grid-template-columns: minmax(0, 720px); }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+section { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:10px; }
+section + section { margin-top:12px; }
+.plots > section + section { margin-top:0; }
+h2 { margin:0 0 6px; font-size:12px; font-weight:600; color:var(--dim); letter-spacing:.04em; }
+h2 span { font-weight:400; }
+a { color:var(--a); }
+pre { margin:0; white-space:pre-wrap; color:var(--bad); }
+button, select { background:#262a32; color:var(--text); border:1px solid var(--line);
+                 border-radius:4px; padding:3px 6px; font:inherit; cursor:pointer; }
+button:hover { border-color:var(--dim); }
+.row { display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+.row input[type=range] { flex:1; min-width:120px; }
+.facts { margin-top:10px; color:var(--dim); white-space:pre-wrap; }
+.facts b { color:var(--text); font-weight:600; }
+.dim { color:var(--dim); }
+canvas { display:block; width:100%; background:#101216; border-radius:4px; }
+audio { display:block; width:100%; height:32px; margin-top:10px; }
+.plots { display:grid; gap:12px; }
+.legend span { margin-right:12px; }

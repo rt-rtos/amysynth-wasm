@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lab: device</title>
+<link rel="stylesheet" href="/common.css">
+<style>
+  main { grid-template-columns: minmax(0, 800px) minmax(0, 1fr); align-items:start; }
+  #oled { width:100%; max-width:768px; aspect-ratio:2 / 1; image-rendering:pixelated; background:#000; border-radius:4px; }
+  #device { user-select:none; outline:none; }
+  #device:focus-visible { box-shadow:0 0 0 1px var(--dim); border-radius:6px; }
+  .pad { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; margin-top:10px; align-items:center; }
+  .key { padding:10px 0; text-align:center; border:1px solid var(--line); border-radius:6px; background:#262a32; cursor:pointer; }
+  .key small { display:block; color:var(--dim); font-size:11px; }
+  .key.down { background:var(--a); color:#000; border-color:var(--a); }
+  .key.down small { color:#123; }
+  .key.latched { box-shadow:0 0 0 2px var(--m); }
+  #knob { width:64px; height:64px; border-radius:50%; margin:auto; border:2px solid var(--line); background:#262a32;
+          display:flex; align-items:center; justify-content:center; cursor:ns-resize; position:relative; }
+  #knob.down { border-color:var(--a); }
+  #knob i { position:absolute; width:4px; height:18px; top:6px; left:28px; background:var(--a); border-radius:2px; transform-origin:2px 26px; }
+  .chords { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .chords button { font-size:11px; padding:2px 6px; }
+  #console { height:220px; overflow:auto; white-space:pre-wrap; color:var(--text); background:#101216; padding:6px; border-radius:4px; }
+  #record { height:160px; overflow:auto; white-space:pre; color:var(--dim); background:#101216; padding:6px; border-radius:4px; }
+  #cmd { flex:1; background:#262a32; color:var(--text); border:1px solid var(--line); border-radius:4px; padding:3px 6px; font:inherit; }
+  table { border-collapse:collapse; } td, th { padding:1px 10px 1px 0; vertical-align:top; text-align:left; }
+  td:first-child { color:var(--dim); white-space:nowrap; }
+  th { color:var(--dim); font-weight:600; }
+  #help { max-height:560px; overflow:auto; }
+  #help h3 { margin:10px 0 4px; font-size:12px; color:var(--m); }
+  #help h4 { margin:8px 0 4px; font-size:12px; color:var(--dim); }
+  #help p { margin:4px 0; color:var(--dim); }
+  #help code { color:var(--text); }
+  #help table { margin:4px 0; }
+  .bottom { grid-column:1 / -1; display:grid; gap:12px; }
+  details > summary { cursor:pointer; color:var(--dim); font-size:12px; font-weight:600; letter-spacing:.04em; }
+  details[open] > summary { margin-bottom:6px; }
+  .bad { color:var(--bad); }
+  .load { display:flex; align-items:center; gap:8px; margin-top:10px; }
+  #oled, .pad, #knob { touch-action:none; }
+  #led { width:12px; height:12px; border-radius:50%; background:#333; box-shadow:0 0 6px #000 inset; }
+  .meter { position:relative; flex:1; max-width:320px; height:8px; background:#101216; border:1px solid var(--line); border-radius:4px; overflow:hidden; }
+  #loadAvg { position:absolute; left:0; top:0; bottom:0; width:0; background:var(--a); }
+  #loadMax { position:absolute; top:0; bottom:0; width:2px; left:0; background:var(--m); }
+  #screen { position:relative; max-width:768px; }
+  /* Over the screen; on a narrow page it grows down over the pad instead of
+   * running off the canvas, and goes away on a pick, the close button or Esc. */
+  #picker { position:absolute; top:0; left:0; right:0; min-height:100%; z-index:2; display:flex; flex-direction:column;
+            align-items:center; justify-content:center; gap:10px; padding:28px 16px 16px;
+            background:rgba(0,0,0,.9); border-radius:4px; text-align:center; }
+  #picker[hidden] { display:none; }   /* the id rule above outranks the browser's [hidden] */
+  #picker h3 { margin:0; font-size:15px; color:#ffd23f; letter-spacing:.04em; }
+  #picker p { margin:0; font-size:12px; }
+  #tplClose { position:absolute; top:6px; right:6px; width:28px; height:28px; padding:0; font-size:16px; line-height:1; }
+  .tpl { display:grid; grid-template-columns:repeat(auto-fill, minmax(96px, 1fr)); gap:8px; width:100%; max-width:560px; }
+  .tpl button { padding:10px 4px; font-size:13px; }
+</style>
+</head>
+<body>
+<nav><a href="/">lab</a> / device</nav>
+<main>
+  <section id="device" tabindex="0">
+    <h2>OLED <span>- 128 x 64, the firmware's frame buffer as last flushed</span></h2>
+    <div id="screen">
+      <canvas id="oled" width="768" height="384"></canvas>
+      <div id="picker" hidden>
+        <button id="tplClose" title="Close (Esc)">&times;</button>
+        <h3>PICK A TEMPLATE</h3>
+        <div class="tpl" id="tplList">Starting the device...</div>
+        <p class="dim">One tap turns the audio on, loads it and plays.</p>
+        <button id="tplSkip">Start with the boot session instead</button>
+      </div>
+    </div>
+    <div class="pad" id="pad"></div>
+    <div class="chords" id="chords"></div>
+    <div class="row">
+      <button id="power">Power on</button>
+      <button id="pause" disabled>Pause</button>
+      <button id="restart">Reboot</button>
+      <button id="templates">Templates</button>
+      <button id="shot">Save PNG</button>
+      <label class="dim">queue <select id="target">
+        <option value="60">60 ms</option><option value="100" selected>100 ms</option>
+        <option value="160">160 ms</option><option value="300">300 ms</option></select></label>
+      <label class="dim"><input type="checkbox" id="mute"> mute</label>
+    </div>
+    <div class="load" title="Render load from a cost model: measured per-oscillator, unison and FX costs, some guesses, no event parsing or patch-load spikes. A relative meter, not a measurement of the chip.">
+      <span id="led"></span>
+      <span class="dim">est. load</span>
+      <div class="meter"><div id="loadAvg"></div><div id="loadMax"></div></div>
+      <span id="loadTxt" class="dim">-</span>
+    </div>
+    <div class="facts" id="status">off</div>
+    <div class="facts" id="about"></div>
+    <div class="facts bad" id="err"></div>
+  </section>
+  <div>
+    <section>
+      <h2>INPUT</h2>
+      <table>
+        <tr><td>encoder turn</td><td>mouse wheel over the device, Left / Right, d-pad left / right</td></tr>
+        <tr><td>encoder click</td><td>Space or Enter, middle-click over the device, click the knob, right stick click</td></tr>
+        <tr><td>buttons 1 2 3</td><td>keys 1 2 3, gamepad B X Y</td></tr>
+        <tr><td>button 0</td><td>the key left of 1 (` or &sect;), gamepad A</td></tr>
+        <tr><td>SHOULDER (LB)</td><td>Q, gamepad LB</td></tr>
+        <tr><td>SHIFT (RB)</td><td>E (hold), gamepad RB; the chord buttons under the pad press SHIFT for you</td></tr>
+      </table>
+      <p class="dim">Keys act while the page has focus and the console line does not.
+        A hold is a held key or mouse button; right-click a pad button to latch it held.
+        Tap, long press and click timing come from the simulation, counted in audio time.
+        On a touch screen, hold with one finger and press with another; drag the knob to turn it.
+        <span id="pad-state">No gamepad.</span></p>
+    </section>
+    <section>
+      <h2>CONTROLS <span>- CONTROLS.md for the screen showing</span></h2>
+      <div class="row" style="margin-top:0">
+        <select id="helpSel"></select>
+        <label class="dim"><input type="checkbox" id="helpFollow" checked> follow the screen</label>
+      </div>
+      <div id="help"></div>
+    </section>
+  </div>
+  <div class="bottom">
+    <section>
+      <details id="consoleBox">
+        <summary>CONSOLE - harness commands (st.seqdump, tr.play, tr.stop, tr.bpm 120, in.btn id=5 act=click ...)</summary>
+        <div id="console"></div>
+        <div class="row">
+          <input id="cmd" placeholder="command, Enter to send" autocomplete="off" spellcheck="false">
+          <button id="dump">st.seqdump</button>
+          <button id="clear">clear</button>
+        </div>
+      </details>
+    </section>
+    <section>
+      <details>
+        <summary>RECORDED - the dispatcher-level input log; it replays to the same result</summary>
+        <div id="record"></div>
+        <div class="row"><button id="savelog">Save log</button></div>
+      </details>
+    </section>
+  </div>
+</main>
+<footer id="notices" class="facts" style="padding:0 12px 12px" hidden></footer>
+<script src="/common.js"></script>
+<script>
+'use strict';
+const RATE = 48000, BLOCK = 256, BLOCK_MS = 1000 * BLOCK / RATE, STEP_BLOCKS = 8;
+/* my_button_id_t: SHOULDER 0, 1, 2, 3, ENC 4, 0 is 5, SHIFT 6. */
+const BTN = { SHOULDER: 0, B1: 1, B2: 2, B3: 3, ENC: 4, B0: 5, SHIFT: 6 };
+const PAD = [['LB', 'Q', BTN.SHOULDER], ['0', '`', BTN.B0], ['1', '1', BTN.B1], ['2', '2', BTN.B2],
+             ['3', '3', BTN.B3], ['RB', 'E', BTN.SHIFT]];
+/* KeyboardEvent.code names physical keys: Backquote is the key left of 1 on
+ * any layout. */
+const KEYS = { Backquote: BTN.B0, Digit1: BTN.B1, Digit2: BTN.B2, Digit3: BTN.B3, KeyQ: BTN.SHOULDER,
+               KeyE: BTN.SHIFT, Space: BTN.ENC, Enter: BTN.ENC, NumpadEnter: BTN.ENC };
+/* Gamepad standard mapping: button index -> device button. */
+const GP = { 0: BTN.B0, 1: BTN.B1, 2: BTN.B2, 3: BTN.B3, 4: BTN.SHOULDER, 5: BTN.SHIFT, 11: BTN.ENC };
+
+let pending = [];          // { t, line } input since the last request; line without the offset
+let lastReq = performance.now();
+let running = false, paused = false, inFlight = false;
+let actx = null, gain = null, nextTime = 0, underruns = 0, simMs = 0, rtt = 0;
+let seq = 0, retries = 0;
+const PAGE_ID = Math.random().toString(36).slice(2, 8);   /* a reload starts a new seq space */
+const held = new Set();    // device buttons currently down, from any source
+
+/* ── device controls ─────────────────────────────────────────────────── */
+const pad = $('pad'), keyEl = {};
+/* Pointer holds: each pointer (a mouse button, a finger) holds the device
+ * button it went down on until it is lifted, so two fingers can hold SHIFT and
+ * press a digit, as on the device. */
+const pointerHeld = new Map();   // pointerId -> device button
+function pointerPress(e, id) {
+  e.preventDefault();
+  if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
+  pointerHeld.set(e.pointerId, id);
+  press(id, true);
+}
+function pointerRelease(e) {
+  if (!pointerHeld.has(e.pointerId)) return;
+  const id = pointerHeld.get(e.pointerId);
+  pointerHeld.delete(e.pointerId);
+  if (![...pointerHeld.values()].includes(id)) press(id, false);
+}
+window.addEventListener('pointerup', pointerRelease);
+window.addEventListener('pointercancel', pointerRelease);
+for (const [label, key, id] of PAD) {
+  const d = document.createElement('div');
+  d.className = 'key'; d.innerHTML = `${label}<small>${key}</small>`;
+  pad.appendChild(d); keyEl[id] = d;
+  d.addEventListener('pointerdown', e => { if (e.button === 0) pointerPress(e, id); });
+  /* Right click latches the button held until the next right click, so a
+   * hold + turn gesture needs only the mouse. */
+  d.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if ([...pointerHeld.values()].includes(id)) return;   // a touch long press, not a right click
+    press(id, !held.has(id));
+    d.classList.toggle('latched', held.has(id));
+  });
+}
+/* SHIFT chords as single clicks: SHIFT down, digit down, digit up, SHIFT up.
+ * The chord latches on the digit's press (CONTROLS.md, Global gestures). A
+ * SHIFT already held, from a key or a latch, is left held. */
+const CHORDS = [
+  ['SHIFT+0', BTN.B0, 0, 'Loop bounce: start, cancel a waiting one, or stop a running one'],
+  ['SHIFT+0 hold', BTN.B0, 1600, 'Discard a running bounce'],
+  ['SHIFT+1', BTN.B1, 0, 'ADSR editor: open on the current instrument, or commit and close'],
+  ['SHIFT+2', BTN.B2, 0, 'Step Trig popup open / close; in an editor: release the tab to the patch'],
+  ['SHIFT+3', BTN.B3, 0, 'Layer page; in an editor on a melodic row: flip row / layer block'],
+];
+for (const [label, id, holdMs, title] of CHORDS) {
+  const btn = document.createElement('button');
+  btn.textContent = label; btn.title = title;
+  btn.onclick = () => chord(id, holdMs);
+  $('chords').appendChild(btn);
+}
+const latch = document.createElement('button');
+latch.title = 'Hold SHIFT until clicked again: SHIFT + turn steps the FM algorithm';
+const showLatch = () => { latch.textContent = held.has(BTN.SHIFT) ? 'SHIFT held - release' : 'hold SHIFT'; };
+latch.onclick = () => { press(BTN.SHIFT, !held.has(BTN.SHIFT)); showLatch(); };
+showLatch();
+$('chords').appendChild(latch);
+function chord(id, holdMs) {
+  const hadShift = held.has(BTN.SHIFT);
+  if (!hadShift) press(BTN.SHIFT, true);
+  press(id, true);
+  const end = () => { press(id, false); if (!hadShift) press(BTN.SHIFT, false); };
+  if (holdMs) setTimeout(end, holdMs); else end();
+}
+const knobWrap = document.createElement('div');
+knobWrap.innerHTML = '<div id="knob"><i></i></div>';
+pad.appendChild(knobWrap);
+const knob = $('knob'); keyEl[BTN.ENC] = knob;
+let knobAngle = 0;
+/* The knob: a tap or click is the encoder click (sent on release), a vertical
+ * drag turns it, one detent per 16 px, up = clockwise. */
+let knobDrag = null;
+knob.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  knob.setPointerCapture(e.pointerId);
+  knobDrag = { id: e.pointerId, y: e.clientY, moved: false };
+});
+knob.addEventListener('pointermove', e => {
+  if (!knobDrag || e.pointerId !== knobDrag.id) return;
+  const steps = Math.trunc((knobDrag.y - e.clientY) / 16);
+  if (steps) { knobDrag.moved = true; knobDrag.y -= steps * 16; turn(steps); }
+});
+knob.addEventListener('pointerup', e => {
+  if (!knobDrag || e.pointerId !== knobDrag.id) return;
+  if (!knobDrag.moved) { press(BTN.ENC, true); press(BTN.ENC, false); }
+  knobDrag = null;
+});
+knob.addEventListener('pointercancel', () => { knobDrag = null; });
+
+function press(id, down) {
+  if (down === held.has(id)) return;
+  if (down) held.add(id); else held.delete(id);
+  keyEl[id].classList.toggle('down', down);
+  if (!down) keyEl[id].classList.remove('latched');
+  if (id === BTN.SHIFT && typeof showLatch === 'function') showLatch();
+  queue(`key ${id} ${down ? 'down' : 'up'}`);
+}
+
+function turn(steps) {
+  if (!steps) return;
+  knobAngle += steps * 15;
+  knob.firstChild.style.transform = `rotate(${knobAngle}deg)`;
+  queue(`enc ${steps}`);
+}
+function queue(line) { pending.push({ t: performance.now(), line }); kick(); }
+
+$('device').addEventListener('wheel', e => {
+  e.preventDefault();
+  turn(e.deltaY > 0 ? 1 : -1);
+}, { passive: false });
+/* Middle button anywhere over the device is the encoder click, like the
+ * wheel is the encoder turn. preventDefault stops autoscroll and paste. */
+$('device').addEventListener('pointerdown', e => { if (e.button === 1) pointerPress(e, BTN.ENC); });
+$('device').addEventListener('auxclick', e => e.preventDefault());
+
+function keyActive(e) { return document.activeElement !== $('cmd') && !e.ctrlKey && !e.metaKey && !e.altKey; }
+window.addEventListener('keydown', e => {
+  if (!keyActive(e)) return;
+  if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { turn(e.code === 'ArrowRight' ? 1 : -1); e.preventDefault(); return; }
+  if (e.code in KEYS) { if (!e.repeat) press(KEYS[e.code], true); e.preventDefault(); }
+});
+window.addEventListener('keyup', e => {
+  if (e.code in KEYS) { press(KEYS[e.code], false); e.preventDefault(); }
+});
+window.addEventListener('blur', () => { for (const id of [...held]) press(id, false); });
+
+/* ── gamepad ─────────────────────────────────────────────────────────── */
+const gpPrev = {};
+let dpadNext = 0;
+function pollGamepad(now) {
+  const gp = [...(navigator.getGamepads ? navigator.getGamepads() : [])].find(g => g && g.mapping === 'standard');
+  $('pad-state').textContent = gp ? 'Gamepad: ' + gp.id : 'No gamepad.';
+  if (gp) {
+    for (const [i, id] of Object.entries(GP)) {
+      const v = !!(gp.buttons[i] && gp.buttons[i].pressed);
+      if (v !== !!gpPrev[i]) { gpPrev[i] = v; press(id, v); }
+    }
+    const l = gp.buttons[14] && gp.buttons[14].pressed, r = gp.buttons[15] && gp.buttons[15].pressed;
+    if (l || r) { if (now >= dpadNext) { turn(r ? 1 : -1); dpadNext = now + (dpadNext ? 90 : 300); } }
+    else dpadNext = 0;
+  }
+  requestAnimationFrame(pollGamepad);
+}
+requestAnimationFrame(pollGamepad);
+
+/* ── CONTROLS.md help, following the screen ──────────────────────────── */
+/* ui_view_id_t (synth_ui.h) -> the CONTROLS.md section for that screen. */
+const VIEW_SECTION = ['Filter editor', 'LFO editor', 'DIST editor', 'Step Trig popup',
+  'ADSR (graph) editor', 'Menu', 'Arp screen', 'Drone screens', 'Drone screens', 'Drone screens',
+  'Prog screen', 'FM screen', 'DEV screen', 'WT screen', 'Sequencer screen (Seq)'];
+let helpSections = {}, helpView = -1;
+const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const inline = t => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+function mdToHtml(lines) {
+  let out = '', i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (l.startsWith('|')) {
+      const rows = [];
+      while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++]);
+      const cells = r => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      out += '<table><tr>' + cells(rows[0]).map(c => `<th>${inline(c)}</th>`).join('') + '</tr>';
+      for (const r of rows.slice(2)) out += '<tr>' + cells(r).map(c => `<td>${inline(c)}</td>`).join('') + '</tr>';
+      out += '</table>';
+      continue;
+    }
+    if (l.startsWith('### ')) { out += `<h4>${inline(l.slice(4))}</h4>`; i++; continue; }
+    if (!l.trim()) { i++; continue; }
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !lines[i].startsWith('|') && !lines[i].startsWith('#')) para.push(lines[i++]);
+    out += `<p>${inline(para.join(' '))}</p>`;
+  }
+  return out;
+}
+async function loadHelp() {
+  /* The single-file build carries CONTROLS.md inline: a file:// page cannot fetch. */
+  let text;
+  if ($('controls-md')) {
+    text = $('controls-md').value;
+  } else {
+    const res = await fetch('controls.md');
+    if (!res.ok) { $('help').textContent = 'CONTROLS.md: ' + await res.text(); return; }
+    text = await res.text();
+  }
+  let name = null;
+  for (const l of text.split('\n')) {
+    if (l.startsWith('## ')) { name = l.slice(3).trim(); helpSections[name] = []; continue; }
+    if (name) helpSections[name].push(l);
+  }
+  $('helpSel').innerHTML = Object.keys(helpSections).map(n => `<option>${esc(n)}</option>`).join('');
+  showHelp('Global gestures');
+}
+function showHelp(name) {
+  if (!helpSections[name]) return;
+  $('helpSel').value = name;
+  $('help').innerHTML = `<h3>${esc(name)}</h3>` + mdToHtml(helpSections[name]);
+}
+$('helpSel').onchange = () => { $('helpFollow').checked = false; showHelp($('helpSel').value); };
+$('helpFollow').onchange = () => { if ($('helpFollow').checked) { helpView = -1; } };
+function followView(v) {
+  if (v === undefined || v === helpView || !$('helpFollow').checked) return;
+  helpView = v;
+  showHelp(VIEW_SECTION[v] || 'Global gestures');
+}
+loadHelp();
+
+/* ── OLED ────────────────────────────────────────────────────────────── */
+const oled = $('oled').getContext('2d');
+function drawFrame(bytes) {
+  /* u8g2 full buffer, vertical_top_lsb: byte (y>>3)*128 + x, bit y&7.
+   * Rows 0..15 yellow, the rest blue, like the dual-colour panel. */
+  const S = 6;
+  oled.fillStyle = '#000'; oled.fillRect(0, 0, 768, 384);
+  for (let y = 0; y < 64; y++) {
+    oled.fillStyle = y < 16 ? '#ffd23f' : '#5ec8ff';
+    const row = (y >> 3) * 128, bit = 1 << (y & 7);
+    for (let x = 0; x < 128; x++) if (bytes[row + x] & bit) oled.fillRect(x * S, y * S, S - 1, S - 1);
+  }
+}
+
+/* ── load meter ──────────────────────────────────────────────────────────
+ * Each answer carries the cost model's mean and max over its blocks, in % of
+ * the 5.33 ms block. The bar is the mean over the last second, the tick its
+ * max. The dot uses the status LED's bands (status_led.c: green, yellow from
+ * 50 %, orange from 75 %, red from 90 %, 5 % hysteresis), here over the
+ * estimate instead of the measured core load. */
+const LED_ENTER = [0, 50, 75, 90], LED_COLOR = ['#1fb84a', '#d6c21f', '#e8771a', '#ff3030'];
+let loadHist = [], ledBand = 0;
+function showLoad(load) {
+  if (!load) return;
+  const now = performance.now();
+  loadHist.push([now, load[0], load[1]]);
+  while (loadHist.length && now - loadHist[0][0] > 1000) loadHist.shift();
+  const avg = loadHist.reduce((a, h) => a + h[1], 0) / loadHist.length;
+  const max = Math.max(...loadHist.map(h => h[2]));
+  while (ledBand < 3 && avg >= LED_ENTER[ledBand + 1]) ledBand++;
+  while (ledBand > 0 && avg < LED_ENTER[ledBand] - 5) ledBand--;
+  $('led').style.background = LED_COLOR[ledBand];
+  $('loadAvg').style.width = Math.min(100, avg) + '%';
+  $('loadAvg').style.background = LED_COLOR[ledBand];
+  $('loadMax').style.left = `calc(${Math.min(100, max)}% - 2px)`;
+  $('loadTxt').textContent = `${avg.toFixed(0)} %  max ${max.toFixed(0)} %`;
+}
+
+/* ── stepping ────────────────────────────────────────────────────────── */
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+function target() { return +$('target').value / 1000; }
+
+function kick() { if (running && !paused) pump(); }
+
+async function pump() {
+  if (inFlight) return;
+  inFlight = true;
+  try {
+    while (running && !paused && nextTime - actx.currentTime < target()) {
+      if (nextTime < actx.currentTime) {
+        if (nextTime > 0) underruns++;
+        nextTime = actx.currentTime + 0.02;
+      }
+      await stepOnce();
+    }
+  } catch (e) {
+    $('err').textContent = String(e.message || e);
+    running = false; $('power').textContent = 'Power on'; $('pause').disabled = true;
+  } finally {
+    inFlight = false;
+  }
+}
+
+async function stepOnce() {
+  const now = performance.now(), span = Math.max(1, now - lastReq);
+  const ev = pending.splice(0).map(p => {
+    const off = Math.min(STEP_BLOCKS - 1, Math.max(0, Math.floor((p.t - lastReq) / span * STEP_BLOCKS)));
+    const [kind, ...rest] = p.line.split(' ');
+    return `${kind} ${off} ${rest.join(' ')}`;
+  });
+  lastReq = now;
+  const t0 = performance.now();
+  const st = await backend.step(STEP_BLOCKS, ev);
+  rtt = performance.now() - t0;
+  apply(st);
+}
+
+/* Where the steps run: the lab's emu module over HTTP, or hostsim built to
+ * WebAssembly inside this page (the static site loads wasm.js, which sets
+ * EMU_WASM). Both answer a step with the same fields; frame and audio come
+ * as base64 text over HTTP and as bytes from the module. */
+const HTTP_BACKEND = {
+  async step(blocks, ev) {
+    const q = new URLSearchParams({ blocks, seq: `${PAGE_ID}-${++seq}` });
+    for (const e of ev) q.append('e', e);
+    const res = await fetchStep('step?' + q);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+  async restart() {
+    const res = await fetch('restart');
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+  async log() { return (await fetch('log.txt')).text(); },
+  about() { return 'Projects are saved on the machine running the lab.'; },
+};
+const backend = window.EMU_WASM || HTTP_BACKEND;
+if (backend.about) $('about').textContent = backend.about();
+const bytesOf = v => typeof v === 'string' ? b64(v) : v;
+
+/* A step is not repeatable: it advances the sim and consumes the input. The
+ * request carries a seq, and the module answers a repeated seq with the reply
+ * it already made, so a request whose connection failed is sent again as it
+ * was. fetch() rejects with a TypeError for exactly those failures; an HTTP
+ * error status is an answer and is not retried. */
+async function fetchStep(url) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetch(url);
+    } catch (e) {
+      if (!(e instanceof TypeError) || attempt >= 3) throw e;
+      retries++;
+      await new Promise(r => setTimeout(r, 50 << attempt));
+    }
+  }
+}
+
+function apply(st) {
+  if (backend.about) $('about').textContent = backend.about();
+  if (st.restarted) {
+    $('err').textContent = 'hostsim had exited and was started again:\n' + (st.ended || []).join('\n');
+    $('record').textContent = '';
+  }
+  if (st.frame) drawFrame(bytesOf(st.frame));
+  followView(st.view);
+  showLoad(st.load);
+  if (st.console) appendConsole(st.console);
+  if (st.record) { const r = $('record'); r.textContent += st.record; r.scrollTop = r.scrollHeight; }
+  simMs = st.ms;
+  if (actx && st.audio) play(bytesOf(st.audio));
+  $('status').textContent = `block ${st.block}   ${(st.ms / 1000).toFixed(2)} s audio   ` +
+    `step ${rtt.toFixed(0)} ms   queue ${actx ? Math.max(0, (nextTime - actx.currentTime) * 1000).toFixed(0) : 0} ms   ` +
+    `gaps ${underruns}   retries ${retries}   held ${[...held].join(',') || '-'}`;
+}
+
+function play(bytes) {
+  const pcm = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 1);
+  const n = pcm.length >> 1, buf = actx.createBuffer(2, n, RATE);
+  const l = buf.getChannelData(0), r = buf.getChannelData(1);
+  for (let i = 0; i < n; i++) { l[i] = pcm[2 * i] / 32768; r[i] = pcm[2 * i + 1] / 32768; }
+  const src = actx.createBufferSource();
+  src.buffer = buf; src.connect(gain);
+  src.start(nextTime);
+  nextTime += n / RATE;
+  src.onended = kick;
+}
+
+/* The page owns time: a timer keeps the queue topped up between the
+ * onended callbacks, so input sent while the queue is full still lands. */
+setInterval(kick, 20);
+
+/* Power on must run inside a user gesture: browsers start audio only there. */
+function powerOn() {
+  $('err').textContent = '';
+  actx = new AudioContext({ sampleRate: RATE, latencyHint: 'interactive' });
+  gain = actx.createGain(); gain.gain.value = $('mute').checked ? 0 : 1; gain.connect(actx.destination);
+  nextTime = 0; underruns = 0; retries = 0; lastReq = performance.now();
+  running = true; paused = false;
+  $('power').textContent = 'Power off'; $('pause').disabled = false; $('pause').textContent = 'Pause';
+  $('device').focus();
+  kick();
+}
+async function powerOff() {
+  running = false; $('power').textContent = 'Power on'; $('pause').disabled = true;
+  if (actx) { await actx.close(); actx = null; }
+}
+$('power').onclick = () => { if (running) powerOff(); else powerOn(); };
+function setPaused(p) {
+  paused = p; $('pause').textContent = paused ? 'Resume' : 'Pause';
+  if (!paused) { nextTime = 0; lastReq = performance.now(); kick(); }
+}
+$('pause').onclick = () => { autoPaused = false; setPaused(!paused); };
+/* A hidden tab stops stepping (the device stands still), and resumes on
+ * return unless Pause was pressed meanwhile. */
+let autoPaused = false;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && running && !paused) { autoPaused = true; setPaused(true); }
+  else if (!document.hidden && autoPaused) { autoPaused = false; setPaused(false); }
+});
+$('mute').onchange = () => { if (gain) gain.gain.value = $('mute').checked ? 0 : 1; };
+$('restart').onclick = async () => {
+  let st;
+  try { st = await backend.restart(); } catch (e) { $('err').textContent = String(e.message || e); return; }
+  $('record').textContent = ''; $('err').textContent = '';
+  for (const id of [...held]) { held.delete(id); keyEl[id].classList.remove('down'); }
+  apply(st);
+};
+$('shot').onclick = () => $('oled').toBlob(b => saveBlob(b, 'oled.png'));
+$('savelog').onclick = async () => saveBlob(new Blob([await backend.log()], { type: 'text/plain' }), 'session.log');
+
+function appendConsole(text) {
+  const c = $('console'); c.textContent += text; c.scrollTop = c.scrollHeight;
+}
+function sendCmd(line) {
+  line = line.trim();
+  if (!line) return;
+  appendConsole('> ' + line + '\n');
+  if (!running || paused) { appendConsole('(power on to run commands)\n'); return; }
+  queue('cmd ' + line);
+}
+$('cmd').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { sendCmd($('cmd').value); $('cmd').value = ''; }
+});
+$('dump').onclick = () => sendCmd('st.seqdump');
+$('clear').onclick = () => { $('console').textContent = ''; };
+
+/* ── template picker ─────────────────────────────────────────────────────
+ * The built-in templates come from the firmware: "pr.tpl" prints one
+ * "TPL <i> <name>" line per template into the console text. The page shows
+ * the picker over the dark screen until something is picked, and again from
+ * the Templates button. A pick turns the audio on (the tap is the gesture
+ * the browser needs), queues the load, and presses play after the UI task
+ * has applied it: a load stops the transport, and it lands on the next
+ * 50 ms UI frame, so play waits well past that. */
+let templates = null;
+async function listTemplates() {
+  if (!templates) {
+    const st = await backend.step(1, ['cmd 0 pr.tpl']);
+    apply(st);
+    templates = [...(st.console || '').matchAll(/^TPL \d+ (.+)$/gm)].map(m => m[1].trim());
+  }
+  return templates;
+}
+async function showPicker() {
+  const list = $('tplList');
+  $('picker').hidden = false;
+  try {
+    const names = await listTemplates();
+    list.innerHTML = '';
+    for (const name of names) {
+      const b = document.createElement('button');
+      b.textContent = name;
+      b.onclick = () => pickTemplate(name);
+      list.appendChild(b);
+    }
+    if (!names.length) list.textContent = 'This firmware lists no templates.';
+  } catch (e) {
+    list.textContent = String(e.message || e);
+  }
+}
+function pickTemplate(name) {
+  $('picker').hidden = true;
+  if (!running) powerOn(); else if (paused) setPaused(false);
+  sendCmd('pr.tpl ' + name);
+  setTimeout(() => sendCmd('tr.play'), 200);
+}
+function hidePicker() { $('picker').hidden = true; }
+$('tplSkip').onclick = () => { hidePicker(); if (!running) powerOn(); };
+$('tplClose').onclick = hidePicker;
+window.addEventListener('keydown', e => { if (e.code === 'Escape' && !$('picker').hidden) hidePicker(); });
+$('templates').onclick = showPicker;
+showPicker();
+</script>
+</body>
+</html>
