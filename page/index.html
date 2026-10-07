@@ -127,9 +127,14 @@
   <div class="bottom">
     <section id="projSection" hidden>
       <details id="projBox">
-        <summary>PROJECTS - saved slots, exported as .amp files a board loads</summary>
+        <summary>PROJECTS - saved slots; export and import .amp files, the format a board stores</summary>
         <div id="projList"></div>
-        <div class="row"><button id="projRefresh">Refresh</button></div>
+        <div class="row">
+          <button id="projRefresh">Refresh</button>
+          <button id="projImport">Import .amp</button>
+          <input type="file" id="projFile" accept=".amp" hidden>
+          <span id="projStatus" class="dim"></span>
+        </div>
       </details>
     </section>
     <section>
@@ -509,7 +514,8 @@ function apply(st) {
   if (st.frame) drawFrame(bytesOf(st.frame));
   followView(st.view);
   showLoad(st.load);
-  if (st.console) { appendConsole(st.console); projectReplies(st.console); }
+  /* An import's per-line acks ("P< ok d <n>") stay out of the console view. */
+  if (st.console) { appendConsole(st.console.replace(/^P< ok d \d+\n/gm, '')); projectReplies(st.console); }
   if (st.record) { const r = $('record'); r.textContent += st.record; r.scrollTop = r.scrollHeight; }
   simMs = st.ms;
   if (actx && st.audio) play(bytesOf(st.audio));
@@ -593,16 +599,61 @@ $('clear').onclick = () => { $('console').textContent = ''; };
  * The list is the firmware's: "P> ls" goes to its project-transfer core, as
  * on a board's UART0, and the "P< slot <n> <size> <ver> <name>" lines come
  * back in the console text. Export reads the slot file from the module's
- * filesystem, so the download is byte for byte what a board stores. Only the
- * in-page backend has the files (readProject). */
-let projRows = null;   /* collecting an ls answer; null when none is due */
+ * filesystem, so the download is byte for byte what a board stores. Import
+ * sends the file through the same core as a board's UART0 does, as "P> put -"
+ * and "P> d" lines: the firmware picks the slot, maps the file name and
+ * checks the file. Within the page no line can be lost, so the lines go
+ * without waiting for each reply, PROJ_BATCH per step (a step takes at most
+ * 256 input lines). Only the in-page backend has the files (readProject). */
+const PROJ_BATCH = 200, PROJ_PIECE = 144;
+let projRows = null;     /* collecting an ls answer; null when none is due */
+let projImport = null;   /* { lines, next } until the import's final reply */
 const slotName = n => `P${String(n).padStart(2, '0')}`;
 function refreshProjects() {
   if (!running || paused) { $('projList').textContent = 'Power on to list the saved projects.'; return; }
   projRows = [];
   queue('cmd P> ls');
 }
+async function importProject(file) {
+  if (!running || paused) { $('projStatus').textContent = 'Power on to import.'; return; }
+  if (projImport) return;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const lines = [`cmd P> put - ${bytes.length} ${file.name}`];
+  for (let i = 0; i < bytes.length; i += PROJ_PIECE) {
+    let s = '';
+    for (const b of bytes.subarray(i, i + PROJ_PIECE)) s += String.fromCharCode(b);
+    lines.push('cmd P> d ' + btoa(s));
+  }
+  projImport = { lines, next: 0 };
+  $('projImport').disabled = true;
+  $('projStatus').textContent = `Importing ${file.name} ...`;
+  queueImportBatch();
+}
+function queueImportBatch() {
+  const end = Math.min(projImport.lines.length, projImport.next + PROJ_BATCH);
+  while (projImport.next < end) queue(projImport.lines[projImport.next++]);
+}
+function importReplies(text) {
+  const m = /^P< (ok put (\d+) (.*)|err .*)$/m.exec(text);
+  if (!m) {
+    /* Next batch once the last one has gone out with a step. */
+    const queued = pending.some(p => p.line.startsWith('cmd P> '));
+    if (!queued && projImport.next < projImport.lines.length) queueImportBatch();
+    return;
+  }
+  projImport = null;
+  $('projImport').disabled = false;
+  if (m[2] === undefined) {
+    $('projStatus').textContent = `Import refused: ${m[1]}`;
+    queue('cmd P> abort');
+    return;
+  }
+  $('projStatus').textContent = `Imported as ${slotName(+m[2])} ${m[3]}`;
+  refreshProjects();
+  backend.persist().catch(e => console.warn(e));
+}
 function projectReplies(text) {
+  if (projImport) importReplies(text);
   if (projRows === null) return;
   for (const m of text.matchAll(/^P< (?:slot (\d+) (\d+) \d+ (.*)|(ok ls|err)\b.*)$/gm)) {
     if (m[1] !== undefined) { projRows.push({ slot: +m[1], size: +m[2], name: m[3] }); continue; }
@@ -642,6 +693,12 @@ if (backend.readProject) {
   $('projSection').hidden = false;
   $('projBox').addEventListener('toggle', () => { if ($('projBox').open) refreshProjects(); });
   $('projRefresh').onclick = refreshProjects;
+  $('projImport').onclick = () => $('projFile').click();
+  $('projFile').onchange = () => {
+    const f = $('projFile').files[0];
+    $('projFile').value = '';
+    if (f) importProject(f);
+  };
 }
 
 /* ── template picker ─────────────────────────────────────────────────────

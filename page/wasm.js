@@ -2,8 +2,8 @@
  * to WebAssembly run in this page. Same interface as the page's HTTP backend:
  * step(blocks, inputLines) resolves to a step answer, restart() boots a fresh
  * instance, log() is the recorded input since boot, about() a status line.
- * readProject(slot), which the HTTP backend lacks, returns a saved project
- * file's bytes.
+ * readProject(slot) and persist(), which the HTTP backend lacks, return a
+ * saved project file's bytes and write /proj to IndexedDB at once.
  *
  * The module and its data are fetched once; a reboot instantiates them again
  * from memory, so nothing is fetched after the first load. Saved projects
@@ -101,6 +101,10 @@ window.EMU_WASM = (() => {
     async readProject(slot) {
       if (!mod) throw new Error('not running');
       return mod.FS.readFile(`/proj/P${String(slot).padStart(2, '0')}.amp`);
+    },
+    /* Mirror /proj to IndexedDB now instead of on the next 2 s tick. */
+    async persist() {
+      if (mod && persistent) await sync(false);
     },
     about() {
       const where = persistent === null ? 'Projects: starting'
