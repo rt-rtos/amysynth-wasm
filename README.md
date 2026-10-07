@@ -81,3 +81,8 @@ such as a working tree with uncommitted changes. The page's version string is
 
 The site is served from the `amysynth-web` repo. Its `update.sh` takes
 `out/wasm/site` and commits it with the version the page names.
+
+## Licence
+
+MIT (`LICENSE`), as the firmware. The site's `notices.txt` carries the
+licences of the third-party code and data compiled in.
