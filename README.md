@@ -10,7 +10,7 @@ only what the device has and a host does not: headers standing in for
 ESP-IDF, FreeRTOS and the board's drivers (`stubs/`), their host
 implementations (`host/`), the program that drives the firmware's boot,
 input and render in place of its tasks (`hostsim/hostsim.c`), and the page.
-`SHIMS.md` lists every one of them and what it changes. The firmware commit
+[`SHIMS.md`](SHIMS.md) lists every one of them and what it changes. The firmware commit
 the submodule pins is the one the site runs, and the page shows it.
 
 ```mermaid
@@ -54,7 +54,7 @@ Needs gcc, zlib, Python 3, and for the site an Emscripten SDK (built here with
 emcc 6.0.11). `./build.sh san` is the native build with ASan and UBSan;
 `./build.sh wasm --single` adds the site as one HTML file that opens from
 disk. Everything else (the replay log grammar, the step protocol, what is
-stood in for, how the wasm build differs): `hostsim/README.md`.
+stood in for, how the wasm build differs): [`hostsim/README.md`](hostsim/README.md).
 
 `FW_ROOT=<checkout> ./build.sh ...` builds against another firmware checkout,
 such as a working tree with uncommitted changes. The page's version string is
