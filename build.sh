@@ -88,18 +88,26 @@ FW_WARN=(-Wall -Wextra -Wno-enum-conversion -Wno-sign-compare -Wno-unused-parame
 NJ=$(nproc)
 FAILED="$OUT/obj/failed"
 rm -f "$FAILED"
+# Every object this run links, in compile order. Built here rather than by
+# globbing obj/, so an object left over from a source the firmware dropped is
+# never linked.
+OBJS=()
 compile() {   # compile <obj> <src> <extra flags...>
     local o=$1 src=$2; shift 2
+    OBJS+=("$o")
     if [ ! -f "$o" ] || [ "$src" -nt "$o" ] || [ "$CFG" -nt "$o" ]; then
         while [ "$(jobs -rp | wc -l)" -ge "$NJ" ]; do wait -n || true; done
         { $CC "${CF[@]}" "$@" -c "$src" -o "$o" 2> "$o.err" || { rm -f "$o"; echo "$src" >> "$FAILED"; }; } &
     fi
 }
 
-AMY_MODS=(algorithms amy envelope examples parse filters oscillators pcm interp_partials custom
-          delay log2_exp2 patches transfer sequencer libminiaudio-audio instrument amy_midi api
-          midi_mappings cv_trigger)
-for m in note_output; do [ -f "$OUT/amy/$m.c" ] && AMY_MODS+=("$m"); done
+# Every AMY source but its standalone programs and other platforms' I/O.
+AMY_MODS=()
+for src in "$OUT"/amy/*.c; do
+    m=$(basename "${src%.c}")
+    case $m in amy-example|amy-message|amy-piano|i2s|linux_midi|pyamy|usb) continue;; esac
+    AMY_MODS+=("$m")
+done
 # Under Emscripten AMY would take its own web build (AudioWorklet hooks, a
 # wasm-worker lock). Compiled without __EMSCRIPTEN__ it takes the same path
 # as the native host build; its audio backend is left out (audio is off).
@@ -112,20 +120,15 @@ for m in "${AMY_MODS[@]}"; do
     [ -n "$m" ] && compile "$OUT/obj/amy/$m.o" "$OUT/amy/$m.c" "${FW_WARN[@]}" "${AMY_CF[@]}"
 done
 
-# The engine, plus what the UI reaches.
-SC_SRCS=(amy_fx.c fx_bus.c arp_core.c note_div.c quantizer.c prog_gen.c voice_config.c live_play.c
-  sequencer_core/seq_chords.c sequencer_core/seq_core_dump.c sequencer_core/seq_core_editors.c
-  sequencer_core/seq_core_engine.c sequencer_core/seq_core_progression.c
-  sequencer_core/seq_core_snapshot.c sequencer_core/seq_core_state.c
-  sequencer_core/seq_core_synth.c sequencer_core/seq_core_tempo.c sequencer_core/seq_core_trig.c
-  sequencer_core/seq_trig_pump.c custompatches/drone_core.c custompatches/drone_std_core.c
-  custompatches/bass_presets.c custompatches/clip_bounce.c custompatches/clip_player.c
-  custompatches/drum_cache.c custompatches/wavetable_bank.c custompatches/sample_rec.c
-  custompatches/wt_synth.c custompatches/wt_builder.c
-  custompatches/fm_voice.c custompatches/fm_graph.c custompatches/fm_presets.c
-  custompatches/additive_voice.c custompatches/additive_presets.c project/project_snapshot.c
-  "$FW/components/project_store/project_store.c" "$FW/components/project_store/project_tlv.c"
-  filter_scope.c project/project_templates.c)
+# The engine: every synth_core source outside synth_ui/ (compiled with the UI
+# below) but amy_helpers.c, which host_pump.c compiles; plus the project
+# store from its own component.
+SC_SRCS=()
+while IFS= read -r f; do
+    case $f in amy_helpers.c) continue;; esac
+    SC_SRCS+=("$f")
+done < <(cd "$SC" && find . -path ./synth_ui -prune -o -name '*.c' -printf '%P\n' | sort)
+SC_SRCS+=("$FW/components/project_store/project_store.c" "$FW/components/project_store/project_tlv.c")
 # The template table firmware builds generate (synth_core CMakeLists.txt).
 TPL_DIR=$SC/project/templates
 TPL_C=$OUT/gen/project_templates_data.c
@@ -171,7 +174,6 @@ fi
 WARNED=$(find "$OUT/obj" -name '*.err' -size +0 | sort)
 [ -n "$WARNED" ] && { echo "warnings:" >&2; cat $WARNED >&2; }
 
-OBJS=("$OUT"/obj/host/*.o "$OUT"/obj/ui/*.o "$OUT"/obj/sc/*.o "$OUT"/obj/u8g2/*.o "$OUT"/obj/amy/*.o)
 if [ $MODE != wasm ]; then
     gcc "${CF[@]}" "${OBJS[@]}" -lz -lm -pthread -o "$OUT/hostsim"
     echo "built $OUT/hostsim"
