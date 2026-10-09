@@ -1,9 +1,9 @@
 # Rebuild and publish the site when the firmware's main branch moves.
 #
 # Every hour: when firmware main is ahead of the `firmware` pin, check out
-# the new commit, require that its Kconfig files did not change
-# (tools/kconfig-gate.py), build native and wasm, and replay the smoke log
-# through both (tools/smoke.py). Only when all of that passes is the pin
+# the new commit, require that config/sdkconfig.h has a setting for every
+# Kconfig symbol it declares (tools/kconfig-gate.py), build native and wasm,
+# and replay the smoke log through both (tools/smoke.py). Only when all of that passes is the pin
 # moved (a "Firmware <sha>" commit on main) and the site pushed to
 # amysynth-web. When the pin is current but the site runs another firmware
 # (a bump made by hand, or a deploy that failed after the bump), the pinned
@@ -106,8 +106,8 @@ jobs:
           git -C firmware log -1 --format='firmware %h %s'
 
       - name: Kconfig gate
-        if: steps.go.outputs.go == '1' && steps.plan.outputs.bump == '1'
-        run: python3 tools/kconfig-gate.py firmware "${{ steps.plan.outputs.pin }}" "${{ steps.plan.outputs.fw }}"
+        if: steps.go.outputs.go == '1'
+        run: python3 tools/kconfig-gate.py firmware config/sdkconfig.h
 
       - name: Build tools
         if: steps.go.outputs.go == '1'

@@ -138,9 +138,10 @@ Functions `hostsim.c` defines in place of firmware ones:
 
 ## Build-level differences
 
-- **Configuration.** `config/sdkconfig.h` is the device's generated
-  configuration header with `CONFIG_SYNTH_WIRELESS` removed: no BLE page,
-  badge or live-play voice. `CONFIG_DEV_SERIAL_HARNESS`, off in the device
+- **Configuration.** `config/sdkconfig.h` is the web build's own
+  configuration, kept by hand; it started from the device's generated
+  header with `CONFIG_SYNTH_WIRELESS` removed: no BLE page, badge or
+  live-play voice. `CONFIG_DEV_SERIAL_HARNESS`, off in the device
   configuration, is defined for `harness_exec.c` and `hostsim.c`: replays and
   the page's console send harness commands.
 - **AMY.** Built from a copy of `components/amy/src` with the generic

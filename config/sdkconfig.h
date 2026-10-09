@@ -1,6 +1,10 @@
 /*
- * Automatically generated file. DO NOT EDIT.
- * Espressif IoT Development Framework (ESP-IDF) 6.1.0 Configuration Header
+ * The web build's configuration, kept by hand and independent of the
+ * device's. Started from the device's generated header (ESP-IDF 6.1.0)
+ * with CONFIG_SYNTH_WIRELESS cleared. Every Kconfig
+ * symbol the firmware declares is either defined here or listed as not set
+ * at the end; tools/kconfig-gate.py checks that, and the site workflow
+ * stops on a symbol that is neither.
  */
 #pragma once
 #define CONFIG_SOC_ADC_SUPPORTED 1
@@ -1249,3 +1253,44 @@
 #define CONFIG_TIMER_TASK_STACK_DEPTH CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH
 #define CONFIG_TIMER_TASK_STACK_SIZE CONFIG_ESP_TIMER_TASK_STACK_SIZE
 #define CONFIG_UDP_RECVMBOX_SIZE CONFIG_LWIP_UDP_RECVMBOX_SIZE
+
+/* Firmware symbols that are off on the web */
+/* CONFIG_AMYSYNTH_DROPOUT_TS is not set */
+/* CONFIG_AMYSYNTH_HEAP_CHECK is not set */
+/* CONFIG_AMYSYNTH_RENDER_STATS is not set */
+/* CONFIG_AMYSYNTH_RENDER_STATS_SPIKE_PCT is not set */
+/* CONFIG_AMYSYNTH_RTOS_STATS is not set */
+/* CONFIG_AMYSYNTH_RTOS_STATS_PERIOD_MS is not set */
+/* CONFIG_AMY_PROFILE_COARSE is not set */
+/* CONFIG_AMY_PROFILE_FULL is not set */
+/* CONFIG_AMY_PROFILE_INTERVAL_MS is not set */
+/* CONFIG_DEV_SERIAL_HARNESS is not set */
+/* CONFIG_RENDER_CLOCK_I2S_DMA_DESC_NUM is not set */
+/* CONFIG_RENDER_CLOCK_I2S_ENABLE is not set */
+/* CONFIG_SEQ_ARP_DEFAULT_ENABLED is not set */
+/* CONFIG_SEQ_ENV_DEBUG_DUMP is not set */
+/* CONFIG_SEQ_MELODIC_DISABLE_DEFAULT_LPF is not set */
+/* CONFIG_SEQ_MELODIC_PATCH_CUSTOM_START is not set */
+/* CONFIG_SEQ_MELODIC_PATCH_JUNO_CHORUS_VIBES is not set */
+/* CONFIG_SEQ_MELODIC_PATCH_JUNO_EPIANO1 is not set */
+/* CONFIG_SEQ_MELODIC_PATCH_JUNO_EPIANO_TREM is not set */
+/* CONFIG_SEQ_MELODIC_PATCH_JUNO_PIANO1 is not set */
+/* CONFIG_SEQ_MELODIC_PATCH_JUNO_SYNTH_BASS2 is not set */
+/* CONFIG_SEQ_MELODIC_PATCH_JUNO_SYNTH_PAD is not set */
+/* CONFIG_SEQ_MELODIC_PATCH_PIANO_BUILTIN is not set */
+/* CONFIG_SEQ_PATCH_BROWSE_PRESELECTED is not set */
+/* CONFIG_SYNTH_BLE_MIDI_LOG is not set */
+/* CONFIG_SYNTH_CUSTOM_WT_TIMING is not set */
+/* CONFIG_SYNTH_DRUM_SYNTH_MODE is not set */
+/* CONFIG_SYNTH_PROJECT_SELFTEST is not set */
+/* CONFIG_SYNTH_WIRELESS is not set */
+/* CONFIG_TINYUSB_RHPORT_HS is not set */
+/* CONFIG_UAC_BIT_RESOLUTION_24_IN_24 is not set */
+/* CONFIG_UAC_BIT_RESOLUTION_24_IN_32 is not set */
+/* CONFIG_UAC_BIT_RESOLUTION_32 is not set */
+/* CONFIG_UAC_SPK_TASK_CORE is not set */
+/* CONFIG_UAC_SPK_TASK_PRIORITY is not set */
+/* CONFIG_UAC_SUPPORT_MACOS is not set */
+/* CONFIG_USB_AUDIO_BLOCKING_WRITE is not set */
+/* CONFIG_USB_AUDIO_DIAGNOSTICS is not set */
+/* CONFIG_USB_DEVICE_UAC_AS_PART is not set */

@@ -48,8 +48,8 @@ Stood in for (beside the headers in `stubs/`; all of it in `../SHIMS.md`):
 the panel (`display_flush()` keeps the u8g2 buffer, `i2c_u8g2_service()`
 returns what a present panel returns), `core_load_last()` and
 `dropout_stats_get()` (no data).
-The host Kconfig is `config/sdkconfig.h`, the device's with
-`CONFIG_SYNTH_WIRELESS` cleared: no BLE page, badge or live-play voice. The
+The host Kconfig is `config/sdkconfig.h`, kept here by hand (`../README.md`);
+`CONFIG_SYNTH_WIRELESS` is cleared: no BLE page, badge or live-play voice. The
 template table is generated from the template specs as the firmware build
 does. `host/host_glue.c` hands the `seq_ui` task handle back as the main
 thread, which makes the step loop the layers applier `synth_ui_init()`
