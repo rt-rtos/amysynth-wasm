@@ -113,7 +113,7 @@ for m in "${AMY_MODS[@]}"; do
 done
 
 # The engine, plus what the UI reaches.
-SC_SRCS=(amy_fx.c fx_bus.c arp_core.c quantizer.c prog_gen.c voice_config.c live_play.c
+SC_SRCS=(amy_fx.c fx_bus.c arp_core.c note_div.c quantizer.c prog_gen.c voice_config.c live_play.c
   sequencer_core/seq_chords.c sequencer_core/seq_core_dump.c sequencer_core/seq_core_editors.c
   sequencer_core/seq_core_engine.c sequencer_core/seq_core_progression.c
   sequencer_core/seq_core_snapshot.c sequencer_core/seq_core_state.c
