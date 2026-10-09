@@ -31,15 +31,17 @@ flowchart LR
     amysrc -->|"map check"| gen
     gen --> drums["drums.bin"]
     tpl --> tdata["template table"]
-    src --> build["build.sh"]
+    src --> build["CMakeLists.txt (build.sh runs it)"]
     amysrc -->|"copy at 48 kHz"| build
     shims --> build
     cfg --> build
     tdata --> build
     drums --> build
-    page --> build
     build --> native["out/native/hostsim"]
-    build --> site["out/wasm/site"]
+    build --> mod["out/wasm/site: the module"]
+    mod --> asm["tools/assemble-site.sh"]
+    page --> asm
+    asm --> site["out/wasm/site: the page"]
 ```
 
 ## Building
@@ -50,16 +52,32 @@ flowchart LR
     ./build.sh wasm                # out/wasm/site, plus node builds of the module
     (cd out/wasm/site && python3 -m http.server)
 
-Needs gcc, zlib, Python 3, and for the site an Emscripten SDK (built here with
-emcc 6.0.11). `./build.sh san` is the native build with ASan and UBSan;
-`./build.sh wasm --single` adds the site as one HTML file that opens from
-disk. Everything else (the replay log grammar, the step protocol, what is
-stood in for, how the wasm build differs): [`hostsim/README.md`](hostsim/README.md).
+Needs gcc, zlib, Python 3, CMake 3.28 or later, Ninja, and for the site an
+Emscripten SDK (built here with emcc 6.0.11). `./build.sh san` is the
+native build with ASan and UBSan; `./build.sh wasm --single` adds the site
+as one HTML file that opens from disk. Everything else (the replay log
+grammar, the step protocol, what is stood in for, how the wasm build
+differs): [`hostsim/README.md`](hostsim/README.md).
 
 `FW_ROOT=<checkout> ./build.sh ...` builds against another firmware checkout,
 such as a working tree with uncommitted changes. The page's version string is
 `git describe --tags --always --dirty` of the firmware tree, or
 `HOSTSIM_VERSION`.
+
+The build itself is the CMake project in `CMakeLists.txt`. `build.sh`
+configures it into `out/<mode>/build` (through `emcmake` for wasm) when that
+directory is new or when `FW_ROOT`, `HOSTSIM_CFLAGS` or `HOSTSIM_WASM_STACK`
+changed, then builds it with Ninja. Ninja rebuilds an object when its
+compile command changed or when its source or any header it included is
+newer; the generated inputs (the AMY copy, `drums.bin`, the template table)
+are redone when one of their declared inputs is newer. Sources are found by
+directory (`file(GLOB ... CONFIGURE_DEPENDS)`), so a source added to or
+removed from the firmware is picked up by the next build.
+`HOSTSIM_CLEAN=1 ./build.sh ...` deletes `out/<mode>/build` first. Compiler
+warnings show for the objects a build compiles; an object that is not
+rebuilt does not show its warnings again. In the wasm build,
+`tools/assemble-site.sh` writes the page, `controls.md` and `notices.txt`
+on every build, after the module links.
 
 ## What is generated, and from where
 

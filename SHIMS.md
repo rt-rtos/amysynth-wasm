@@ -24,7 +24,7 @@ Two checks anyone can run from the repo root:
     rg -n 'HOSTSIM|AMYSYNTH_HOST|DEVSIM|__EMSCRIPTEN__' firmware/main firmware/components --glob '!**/components/amy/**'
 
     # every firmware file the build compiles comes from the submodule
-    grep -n 'FW/' build.sh
+    grep -n 'FW}' CMakeLists.txt
 
 AMY is left out of the first check because upstream AMY has `__EMSCRIPTEN__`
 branches of its own, for its web build; this build turns them off (below).
@@ -152,8 +152,9 @@ Functions `hostsim.c` defines in place of firmware ones:
   its native host path instead of its own web build.
 - **Warnings.** Firmware sources, AMY and U8g2 included, compile with the
   device build's warning set (`-Wall -Wextra` with its exceptions, as in
-  the firmware's compile commands), without `-Werror`; the build prints what
-  they report. This repo's own sources compile with `-Wall -Wextra`. At
+  the firmware's compile commands), without `-Werror`; Ninja prints what
+  they report for each object a build compiles. This repo's own sources
+  compile with `-Wall -Wextra`. At
   firmware `d043e6eb`:
   - gcc 13.3 (native): 2. An unused variable in `display_dist.c`
     (`draw_curve`), which the device build reports too; and a possible
