@@ -92,12 +92,26 @@ rm -f "$FAILED"
 # globbing obj/, so an object left over from a source the firmware dropped is
 # never linked.
 OBJS=()
+# An object is stale when it, or the dependency list the compiler wrote beside
+# it (-MMD), is missing, or when its source, the config or any header it
+# included is newer. Headers matter: a struct changed in one shared header
+# leaves every object built against the old layout reading the wrong offsets.
+stale() {   # stale <obj> <src>
+    local o=$1 src=$2 d=${1%.o}.d dep
+    [ -f "$o" ] && [ -f "$d" ] || return 0
+    [ "$src" -nt "$o" ] || [ "$CFG" -nt "$o" ] && return 0
+    for dep in $(sed -e 's/^[^:]*://' -e 's/\\$//' "$d"); do
+        [ "$dep" -nt "$o" ] && return 0
+    done
+    return 1
+}
 compile() {   # compile <obj> <src> <extra flags...>
     local o=$1 src=$2; shift 2
     OBJS+=("$o")
-    if [ ! -f "$o" ] || [ "$src" -nt "$o" ] || [ "$CFG" -nt "$o" ]; then
+    if stale "$o" "$src"; then
         while [ "$(jobs -rp | wc -l)" -ge "$NJ" ]; do wait -n || true; done
-        { $CC "${CF[@]}" "$@" -c "$src" -o "$o" 2> "$o.err" || { rm -f "$o"; echo "$src" >> "$FAILED"; }; } &
+        { $CC "${CF[@]}" "$@" -MMD -MF "${o%.o}.d" -c "$src" -o "$o" 2> "$o.err" \
+              || { rm -f "$o"; echo "$src" >> "$FAILED"; }; } &
     fi
 }
 
