@@ -1,0 +1,188 @@
+# Rebuild and publish the site when the firmware's main branch moves.
+#
+# Every hour: when firmware main is ahead of the `firmware` pin, check out
+# the new commit, require that its Kconfig files did not change
+# (tools/kconfig-gate.py), build native and wasm, and replay the smoke log
+# through both (tools/smoke.py). Only when all of that passes is the pin
+# moved (a "Firmware <sha>" commit on main) and the site pushed to
+# amysynth-web. When the pin is current but the site runs another firmware
+# (a bump made by hand, or a deploy that failed after the bump), the pinned
+# firmware is built, checked and published the same way.
+#
+# A failed run publishes nothing. Scheduled runs do not retry the same
+# firmware commit against the same commit of this repo; a fix here or a
+# newer firmware commit is tried on the next run. workflow_dispatch always
+# runs, and with `force` it rebuilds and republishes the pinned firmware.
+#
+# Needs the secret WEB_DEPLOY_KEY: the private half of a deploy key with
+# write access on rt-rtos/amysynth-web.
+name: Site
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild and republish even when the site runs the pinned firmware
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: site
+  cancel-in-progress: false
+
+env:
+  FIRMWARE_URL: https://github.com/rt-rtos/S3-Amysynth.git
+  EMSDK_VERSION: 6.0.11
+
+jobs:
+  site:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check out the site
+        uses: actions/checkout@v5
+        with:
+          repository: rt-rtos/amysynth-web
+          ssh-key: ${{ secrets.WEB_DEPLOY_KEY }}
+          path: web
+
+      - name: Compare firmware main, the pin and the site
+        id: plan
+        run: |
+          pin=$(git rev-parse HEAD:firmware)
+          fw=$(git ls-remote "$FIRMWARE_URL" refs/heads/main | cut -f1)
+          site=$(sed -n 's/.*name="firmware-version" content="\([^"]*\)".*/\1/p' web/index.html | head -1)
+          [ -n "$fw" ] || { echo "cannot read firmware main"; exit 1; }
+          bump=0; build=0
+          if [ "$fw" != "$pin" ]; then bump=1; build=1
+          elif [ "$site" != "${pin:0:8}" ] || [ "${{ inputs.force }}" = true ]; then build=1
+          fi
+          [ $bump = 1 ] || fw=$pin
+          echo "pin=$pin fw=$fw site=$site bump=$bump build=$build"
+          { echo "pin=$pin"; echo "fw=$fw"; echo "bump=$bump"; echo "build=$build"; } >> "$GITHUB_OUTPUT"
+          echo "HOSTSIM_VERSION=${fw:0:8}" >> "$GITHUB_ENV"
+          {
+            echo "Pinned firmware \`${pin:0:8}\`, firmware main \`${fw:0:8}\`, site \`${site:-none}\`."
+            if [ $bump = 1 ]; then echo "Building firmware main; on success the pin moves and the site is published."
+            elif [ $build = 1 ]; then echo "Building the pinned firmware for the site."
+            else echo "Nothing to do."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Look for an earlier failure of this firmware commit
+        id: seen
+        if: steps.plan.outputs.build == '1' && github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: .ci-failed
+          key: failed-${{ steps.plan.outputs.fw }}-${{ github.sha }}
+          lookup-only: true
+
+      - name: Decide
+        id: go
+        run: |
+          go=0
+          if [ "${{ steps.plan.outputs.build }}" = 1 ]; then
+            if [ "${{ steps.seen.outputs.cache-hit }}" = true ]; then
+              echo "Firmware ${HOSTSIM_VERSION} already failed against this commit; not retried." | tee -a "$GITHUB_STEP_SUMMARY"
+            else go=1; fi
+          fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the firmware
+        if: steps.go.outputs.go == '1'
+        run: |
+          git submodule update --init --filter=blob:none firmware
+          if [ "${{ steps.plan.outputs.bump }}" = 1 ]; then
+            git -C firmware fetch --filter=blob:none origin main
+            git -C firmware checkout --quiet --detach "${{ steps.plan.outputs.fw }}"
+          fi
+          git -C firmware submodule update --init --depth 1 amy
+          git -C firmware log -1 --format='firmware %h %s'
+
+      - name: Kconfig gate
+        if: steps.go.outputs.go == '1' && steps.plan.outputs.bump == '1'
+        run: python3 tools/kconfig-gate.py firmware "${{ steps.plan.outputs.pin }}" "${{ steps.plan.outputs.fw }}"
+
+      - name: Build tools
+        if: steps.go.outputs.go == '1'
+        run: sudo apt-get install -y --no-install-recommends ninja-build zlib1g-dev
+
+      - name: Cache the Emscripten SDK
+        if: steps.go.outputs.go == '1'
+        id: emsdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}
+
+      - name: Install the Emscripten SDK
+        if: steps.go.outputs.go == '1' && steps.emsdk-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install "$EMSDK_VERSION"
+          ~/emsdk/emsdk activate "$EMSDK_VERSION"
+
+      - name: Build native
+        if: steps.go.outputs.go == '1'
+        run: ./build.sh
+
+      - name: Build wasm
+        if: steps.go.outputs.go == '1'
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          ./build.sh wasm
+
+      - name: Smoke replay
+        if: steps.go.outputs.go == '1'
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          tools/smoke.py --wasm smoke-out | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.go.outputs.go == '1'
+        with:
+          name: site-${{ env.HOSTSIM_VERSION }}
+          path: out/wasm/site
+
+      - name: Move the pin
+        if: steps.go.outputs.go == '1' && steps.plan.outputs.bump == '1'
+        run: |
+          pin=${{ steps.plan.outputs.pin }}; fw=${{ steps.plan.outputs.fw }}
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          {
+            echo "Firmware ${fw:0:8}: $(git -C firmware log -1 --format=%s "$fw")"
+            if [ "$(git -C firmware rev-list --count "$pin..$fw")" -gt 1 ]; then
+              echo; echo "Firmware commits since ${pin:0:8}:"
+              git -C firmware log --format='%h %s' "$pin..$fw"
+            fi
+          } > "$RUNNER_TEMP/msg"
+          git add firmware
+          git commit -q -F "$RUNNER_TEMP/msg"
+          git push origin HEAD:main
+
+      - name: Publish
+        if: steps.go.outputs.go == '1'
+        working-directory: web
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # update.sh fails to commit when the build matches the site
+          ./update.sh ../out/wasm/site || git diff --cached --quiet
+          git push origin HEAD:main
+
+      - name: Remember the failure
+        if: failure() && steps.go.outputs.go == '1' && github.event_name == 'schedule'
+        run: mkdir -p .ci-failed && touch .ci-failed/marker
+
+      - uses: actions/cache/save@v4
+        if: failure() && steps.go.outputs.go == '1' && github.event_name == 'schedule'
+        with:
+          path: .ci-failed
+          key: failed-${{ steps.plan.outputs.fw }}-${{ github.sha }}

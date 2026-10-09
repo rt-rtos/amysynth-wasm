@@ -100,6 +100,20 @@ on every build, after the module links.
 The site is served from the `amysynth-web` repo. Its `update.sh` takes
 `out/wasm/site` and commits it with the version the page names.
 
+`.github/workflows/site.yml` does this every hour when the firmware's main
+branch has moved past the `firmware` pin. It checks out the new firmware
+commit and stops before building if the firmware's Kconfig files changed
+other than in help or prompt texts (`tools/kconfig-gate.py`): those need
+`config/sdkconfig.h` refreshed from a firmware build, by hand. Then it builds
+native and wasm and runs `tools/smoke.py --wasm`, which loads every built-in
+template in both builds, requires each to play above -60 dBFS, and requires
+button 3 to change the screen. Only a run that passes all of it moves the
+pin (a `Firmware <sha>: <subject>` commit here) and publishes the site. A
+failed run publishes nothing and is not retried until this repo or the
+firmware has a new commit. When the pin is current but the site runs another
+firmware, the pinned firmware is built, checked and published. The workflow
+can also be started by hand; `force` republishes the pinned firmware.
+
 ## Licence
 
 MIT (`LICENSE`), as the firmware. The site's `notices.txt` carries the
