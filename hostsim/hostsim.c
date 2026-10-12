@@ -380,7 +380,13 @@ static void boot(void)
     cfg.amy_external_sequencer_hook = seq_tick_hook;
     cfg.amy_external_bus_postprocess_hook = clip_bounce_bus_hook;
     cfg.max_sequencer_tags = SEQ_CLIP_TAG_MAX + 2;
+#ifdef AMY_SYNTH_COUNT
+    /* As main.c: the slot map plus the shared LFO synths, one voice id each. */
+    cfg.max_synths = AMY_SYNTH_COUNT;
+    cfg.max_voices += LFO_SYNTH_MAX;
+#else
     cfg.max_synths = SYNTH_SLOT_COUNT;
+#endif
     cfg.max_buses = FX_BUS_COUNT;
 #if CONFIG_SEQ_KS_RINGS > 0
     cfg.ks_oscs = CONFIG_SEQ_KS_RINGS;
