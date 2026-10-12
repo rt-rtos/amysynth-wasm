@@ -107,7 +107,7 @@
         <tr><td>buttons 1 2 3</td><td>keys 1 2 3, gamepad B X Y</td></tr>
         <tr><td>button 0</td><td>the key left of 1 (` or &sect;), gamepad A</td></tr>
         <tr><td>SHOULDER (LB)</td><td>Q, gamepad LB</td></tr>
-        <tr><td>SHIFT (RB)</td><td>E (hold), gamepad RB; the chord buttons under the pad press SHIFT for you</td></tr>
+        <tr><td>SHIFT (RB)</td><td>Shift or E (hold), gamepad RB, so Shift+1 on the keyboard is the device's SHIFT+1; the chord buttons under the pad press SHIFT for you</td></tr>
       </table>
       <p class="dim">Keys act while the page has focus and the console line does not.
         A hold is a held key or mouse button; right-click a pad button to latch it held.
@@ -169,7 +169,8 @@ const PAD = [['LB', 'Q', BTN.SHOULDER], ['0', '`', BTN.B0], ['1', '1', BTN.B1], 
 /* KeyboardEvent.code names physical keys: Backquote is the key left of 1 on
  * any layout. */
 const KEYS = { Backquote: BTN.B0, Digit1: BTN.B1, Digit2: BTN.B2, Digit3: BTN.B3, KeyQ: BTN.SHOULDER,
-               KeyE: BTN.SHIFT, Space: BTN.ENC, Enter: BTN.ENC, NumpadEnter: BTN.ENC };
+               KeyE: BTN.SHIFT, ShiftLeft: BTN.SHIFT, ShiftRight: BTN.SHIFT,
+               Space: BTN.ENC, Enter: BTN.ENC, NumpadEnter: BTN.ENC };
 /* Gamepad standard mapping: button index -> device button. */
 const GP = { 0: BTN.B0, 1: BTN.B1, 2: BTN.B2, 3: BTN.B3, 4: BTN.SHOULDER, 5: BTN.SHIFT, 11: BTN.ENC };
 
