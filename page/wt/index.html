@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lab: wavetable</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../common.css">
+<style>
+  .grid { display:grid; grid-template-columns: 36px repeat(3, minmax(0, 1fr)); gap:4px 8px; align-items:center; }
+  .grid .hd { text-align:center; font-weight:700; }
+  .cell { display:flex; flex-direction:column; min-width:0; }
+  .cell input { width:100%; margin:0; }
+  .cell output { text-align:center; color:var(--dim); }
+  .ka { color:var(--a); } .km { color:var(--m); } .kb { color:var(--b); }
+  .btns { display:flex; gap:4px; justify-content:center; }
+  #wave { height:300px; } #spec { height:180px; } #map { height:220px; cursor:crosshair; }
+  #level { height:130px; } #oled { width:100%; height:auto; aspect-ratio:128 / 40; image-rendering:pixelated; }
+</style>
+</head>
+<body>
+<nav><a href="../">lab</a> / wavetable</nav>
+<main>
+  <div>
+    <section>
+      <h2>KEYFRAMES</h2>
+      <div class="grid" id="grid"></div>
+      <div class="row">
+        <label>Harmonics <select id="range">
+          <option value="0">63, clean to F#4</option>
+          <option value="1">31, clean to F#5</option>
+          <option value="2">15, clean to G6</option>
+        </select></label>
+      </div>
+      <div class="row">
+        <label for="scan">Scan</label>
+        <input type="range" id="scan" min="0" max="63" step="0.05" value="0">
+        <output id="scanOut">0.00</output>
+      </div>
+      <div class="facts" id="facts"></div>
+    </section>
+    <section>
+      <h2>DEVICE VIEW <span>- the scanned frame at the WT screen's 128 x 40</span></h2>
+      <canvas id="oled" width="128" height="40"></canvas>
+    </section>
+    <section>
+      <h2>AUDIO <span>- the table played by AMY on the host: 48 kHz, fixed point</span></h2>
+      <div class="row" style="margin-top:0">
+        <label for="note">Note</label>
+        <input type="range" id="note" min="24" max="96" step="1" value="48">
+        <output id="noteOut"></output>
+      </div>
+      <div class="row">
+        <button id="playHold">Play at scan</button>
+        <button id="playSweep">Play scan sweep</button>
+        <a id="saveWav" hidden>save WAV</a>
+      </div>
+      <audio id="player" controls></audio>
+      <div class="row">
+        <button id="vital">Export for Vital</button>
+        <span class="dim">the table as AMY reads it, 2048 samples per frame</span>
+      </div>
+      <div class="row">
+        <button id="apply">Apply to device</button>
+        <span class="dim">the device tab's patch 288 takes these parameters</span>
+      </div>
+      <div class="facts" id="audioMsg"></div>
+    </section>
+  </div>
+  <div class="plots">
+    <section>
+      <h2>WAVEFORM <span>- one cycle at the scan position</span></h2>
+      <canvas id="wave"></canvas>
+      <div class="legend"><span class="ka">A frame 0</span><span class="km">M frame 32</span><span class="kb">B frame 63</span><span>white: scan</span></div>
+    </section>
+    <section>
+      <h2>HARMONICS <span>- level of each harmonic at the scan position, dB re full scale</span></h2>
+      <canvas id="spec"></canvas>
+    </section>
+    <section>
+      <h2>TABLE MAP <span>- frame across, harmonic up, brightness = level (60 dB range). Drag to scan</span></h2>
+      <canvas id="map"></canvas>
+    </section>
+    <section>
+      <h2>LEVEL ALONG THE SCAN <span>- RMS with AMY's crossfade between frames, dB re a plain saw</span></h2>
+      <canvas id="level"></canvas>
+    </section>
+  </div>
+</main>
+<script src="../common.js"></script>
+<script src="../hostsim.js"></script>
+<script src="../lab.js"></script>
+<script>
+'use strict';
+const KEYS = ['A', 'M', 'B'], KCLS = ['ka', 'km', 'kb'];
+const KCOL = ['#5fb3ff', '#ffc857', '#ff7096'];
+const ROWS = [
+  { id: 'shape',  label: 'SHP', min: 0,  max: 100, def: 0,  fmt: v => String(v) },
+  { id: 'width',  label: 'WID', min: 10, max: 90,  def: 50, fmt: v => v + ' %' },
+  { id: 'bright', label: 'BRT', min: 0,  max: 10,  def: 10, fmt: v => String(v) },
+  { id: 'sync',   label: 'SYN', min: 10, max: 80,  def: 10, fmt: v => (v / 10).toFixed(1) },
+  /* slider position 1 is Off (the model has no peak on harmonic 1) */
+  { id: 'peak',   label: 'PK',  min: 1,  max: 63,  def: 0,  fmt: v => v < 2 ? 'off' : String(v) },
+];
+const REF_RMS = 32000 / Math.sqrt(3);     /* the level every frame is set to, before Peak */
+const SUB = 4;                            /* level samples per frame step */
+
+const st = { v: ROWS.map(r => [r.def, r.def, r.def]), range: 1, scan: 0, note: 48 };
+let tab = null;      /* { x: Int16Array, meta, spec: Float32Array[frames][64], level: Float32Array } */
+let seq = 0;
+
+const flat = () => st.v.flat();
+
+/* ── controls ─────────────────────────────────────────────────────────── */
+function buildGrid() {
+  const g = $('grid');
+  g.append(document.createElement('div'));
+  KEYS.forEach((k, i) => {
+    const d = document.createElement('div');
+    d.className = 'hd ' + KCLS[i];
+    d.textContent = k;
+    g.append(d);
+  });
+  ROWS.forEach((r, ri) => {
+    const l = document.createElement('div');
+    l.textContent = r.label;
+    g.append(l);
+    KEYS.forEach((k, ki) => {
+      const c = document.createElement('div');
+      c.className = 'cell';
+      const inp = document.createElement('input');
+      inp.type = 'range'; inp.min = r.min; inp.max = r.max; inp.step = 1;
+      inp.id = `in-${ri}-${ki}`;
+      const out = document.createElement('output');
+      out.id = `out-${ri}-${ki}`;
+      inp.addEventListener('input', () => {
+        let v = Number(inp.value);
+        if (r.id === 'peak' && v < 2) v = 0;
+        st.v[ri][ki] = v;
+        out.textContent = r.fmt(v);
+        refresh();
+      });
+      c.append(inp, out);
+      g.append(c);
+    });
+  });
+  g.append(document.createElement('div'));
+  KEYS.forEach((k, ki) => {
+    const d = document.createElement('div');
+    d.className = 'btns';
+    const copy = document.createElement('button');
+    copy.textContent = '-> ' + KEYS[(ki + 1) % 3];
+    copy.title = 'Copy this keyframe to ' + KEYS[(ki + 1) % 3];
+    copy.onclick = () => { ROWS.forEach((r, ri) => st.v[ri][(ki + 1) % 3] = st.v[ri][ki]); syncInputs(); refresh(); };
+    const reset = document.createElement('button');
+    reset.textContent = ki === 1 ? 'blend' : 'reset';
+    reset.onclick = ki === 1 ? blend : () => { ROWS.forEach((r, ri) => st.v[ri][ki] = r.def); syncInputs(); refresh(); };
+    d.append(copy, reset);
+    g.append(d);
+  });
+}
+
+function syncInputs() {
+  ROWS.forEach((r, ri) => KEYS.forEach((k, ki) => {
+    const v = st.v[ri][ki];
+    $(`in-${ri}-${ki}`).value = (r.id === 'peak' && v < 2) ? 1 : v;
+    $(`out-${ri}-${ki}`).textContent = r.fmt(v);
+  }));
+  $('range').value = st.range;
+  $('scan').value = st.scan;
+  $('scanOut').textContent = st.scan.toFixed(2);
+}
+
+function setFlat(a) {
+  ROWS.forEach((r, ri) => KEYS.forEach((k, ki) => st.v[ri][ki] = a[ri * 3 + ki]));
+}
+
+async function blend() {
+  setFlat(await LAB.wtBlend(flat()));
+  syncInputs();
+  refresh();
+}
+
+/* ── table + analysis ─────────────────────────────────────────────────── */
+async function refresh() {
+  const mine = ++seq;
+  history.replaceState(null, '', '#' + flat().join(',') + ';' + st.range);
+  const { table, meta } = await LAB.wtTable(flat(), st.range);
+  if (mine !== seq) return;                 /* a newer edit is already on its way */
+  tab = analyse(table, meta);
+  drawAll();
+}
+
+function analyse(x, meta) {
+  const F = meta.frames, N = meta.cycle, NH = N / 4;   /* harmonics 1..NH-1 shown */
+  const cos = new Float32Array(N), sin = new Float32Array(N);
+  for (let j = 0; j < N; j++) { cos[j] = Math.cos(2 * Math.PI * j / N); sin[j] = Math.sin(2 * Math.PI * j / N); }
+  const spec = [];
+  for (let f = 0; f < F; f++) {
+    const s = new Float32Array(NH);
+    for (let n = 1; n < NH; n++) {
+      let re = 0, im = 0;
+      for (let j = 0; j < N; j++) { const v = x[f * N + j], k = (n * j) & (N - 1); re += v * cos[k]; im += v * sin[k]; }
+      s[n] = 2 * Math.hypot(re, im) / N;
+    }
+    spec.push(s);
+  }
+  /* RMS along the scan: AMY mixes the two neighbouring frames linearly. */
+  const level = new Float32Array((F - 1) * SUB + 1);
+  const ref = REF_RMS * meta.scale;
+  for (let i = 0; i < level.length; i++) {
+    const f = Math.min(F - 2, Math.floor(i / SUB)), t = i / SUB - f;
+    let acc = 0;
+    for (let j = 0; j < N; j++) { const v = (1 - t) * x[f * N + j] + t * x[(f + 1) * N + j]; acc += v * v; }
+    level[i] = 20 * Math.log10(Math.max(1e-6, Math.sqrt(acc / N) / ref));
+  }
+  return { x, meta, spec, level, NH };
+}
+
+/* The cycle at a fractional frame position, AMY's crossfade. */
+function frameAt(pos) {
+  const { x, meta } = tab, N = meta.cycle;
+  const f = Math.min(meta.frames - 2, Math.floor(pos)), t = pos - f;
+  const out = new Float32Array(N);
+  for (let j = 0; j < N; j++) out[j] = (1 - t) * x[f * N + j] + t * x[(f + 1) * N + j];
+  return out;
+}
+
+function specAt(pos) {
+  const cyc = frameAt(pos), N = cyc.length, NH = tab.NH, s = new Float32Array(NH);
+  for (let n = 1; n < NH; n++) {
+    let re = 0, im = 0;
+    for (let j = 0; j < N; j++) { const a = 2 * Math.PI * ((n * j) % N) / N; re += cyc[j] * Math.cos(a); im += cyc[j] * Math.sin(a); }
+    s[n] = 2 * Math.hypot(re, im) / N;
+  }
+  return s;
+}
+
+/* ── drawing ──────────────────────────────────────────────────────────── */
+function drawWave() {
+  const { g, w, h } = ctxOf('wave'), N = tab.meta.cycle, mid = h / 2, amp = h / 2 - 8;
+  g.strokeStyle = '#2c313a'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, mid); g.lineTo(w, mid);
+  for (let q = 1; q < 4; q++) { g.moveTo(w * q / 4, 0); g.lineTo(w * q / 4, h); }
+  g.stroke();
+  const trace = (cyc, color, lw, alpha) => {
+    g.globalAlpha = alpha; g.strokeStyle = color; g.lineWidth = lw;
+    g.beginPath();
+    for (let j = 0; j <= N; j++) {            /* N + 1 points: the cycle closes on itself */
+      const y = mid - cyc[j % N] / 32768 * amp, xx = j / N * w;
+      j ? g.lineTo(xx, y) : g.moveTo(xx, y);
+    }
+    g.stroke(); g.globalAlpha = 1;
+  };
+  [0, tab.meta.mid_frame, tab.meta.frames - 1].forEach((f, i) => trace(frameAt(f), KCOL[i], 1, 0.55));
+  trace(frameAt(st.scan), '#f2f4f8', 2, 1);
+}
+
+function drawSpec() {
+  const { g, w, h } = ctxOf('spec'), NH = tab.NH, H = tab.meta.harmonics;
+  const s = specAt(st.scan), top = 6, lo = -72, padL = 30, padB = 14;
+  const pw = w - padL, ph = h - padB, bw = pw / (NH - 1);
+  const yOf = db => (top - db) / (top - lo) * ph;
+  g.fillStyle = '#191c22'; g.fillRect(padL + H * bw, 0, pw - H * bw, ph);   /* above the Range cap */
+  g.strokeStyle = '#2c313a'; g.fillStyle = '#8a93a3'; g.lineWidth = 1;
+  for (let db = 0; db >= lo; db -= 12) {
+    g.beginPath(); g.moveTo(padL, yOf(db)); g.lineTo(w, yOf(db)); g.stroke();
+    g.fillText(String(db), 2, yOf(db) + 4);
+  }
+  for (let n = 1; n < NH; n++) {
+    const db = 20 * Math.log10(Math.max(1e-9, s[n] / 32000));
+    if (db > lo) { g.fillStyle = '#f2f4f8'; g.fillRect(padL + (n - 1) * bw + 1, yOf(db), Math.max(1, bw - 2), ph - yOf(db)); }
+  }
+  g.fillStyle = '#8a93a3';
+  [1, 2, 4, 8, 16, 32, 63].forEach(n => g.fillText(String(n), padL + (n - 1) * bw, h - 2));
+}
+
+function drawMap() {
+  const { g, w, h } = ctxOf('map'), F = tab.meta.frames, NH = tab.NH;
+  const cw = w / F, ch = h / (NH - 1);
+  for (let f = 0; f < F; f++) for (let n = 1; n < NH; n++) {
+    const db = 20 * Math.log10(Math.max(1e-9, tab.spec[f][n] / 32000));
+    g.fillStyle = heat((db + 60) / 60);
+    g.fillRect(f * cw, h - n * ch, Math.ceil(cw), Math.ceil(ch));
+  }
+  [0, tab.meta.mid_frame, F - 1].forEach((f, i) => { g.fillStyle = KCOL[i]; g.fillRect(f * cw, 0, cw, 3); });
+  g.strokeStyle = '#f2f4f8'; g.lineWidth = 1;
+  const sx = (st.scan + 0.5) * cw;
+  g.beginPath(); g.moveTo(sx, 0); g.lineTo(sx, h); g.stroke();
+}
+
+function drawLevel() {
+  const { g, w, h } = ctxOf('level'), L = tab.level, padL = 30;
+  let lo = -3, hi = 1;
+  for (const v of L) { lo = Math.min(lo, Math.floor(v)); hi = Math.max(hi, Math.ceil(v)); }
+  const yOf = db => (hi - db) / (hi - lo) * (h - 20) + 10, xOf = i => padL + i / (L.length - 1) * (w - padL);
+  const step = (hi - lo) > 12 ? 6 : (hi - lo) > 6 ? 2 : 1;
+  g.fillStyle = '#8a93a3'; g.lineWidth = 1;
+  for (let db = hi; db >= lo; db -= step) {
+    g.strokeStyle = db === 0 ? '#4a5160' : '#2c313a';
+    g.beginPath(); g.moveTo(padL, yOf(db)); g.lineTo(w, yOf(db)); g.stroke();
+    g.fillText(String(db), 2, yOf(db) + 4);
+  }
+  g.strokeStyle = '#f2f4f8'; g.lineWidth = 1.5; g.beginPath();
+  L.forEach((v, i) => i ? g.lineTo(xOf(i), yOf(v)) : g.moveTo(xOf(i), yOf(v)));
+  g.stroke();
+  g.strokeStyle = '#8a93a3'; g.lineWidth = 1;
+  const sx = xOf(st.scan * SUB);
+  g.beginPath(); g.moveTo(sx, 0); g.lineTo(sx, h); g.stroke();
+}
+
+/* display_wt.c's mapping: every 2nd sample, -127..127, y = mid - v * amp / 127. */
+function drawOled() {
+  const c = $('oled'), g = c.getContext('2d'), cyc = frameAt(st.scan), MID = 19, AMP = 19;
+  g.fillStyle = '#000'; g.fillRect(0, 0, 128, 40);
+  g.fillStyle = '#7fd4ff';
+  const yOf = i => {
+    const v = Math.max(-127, Math.min(127, Math.round(cyc[i * 2] * 127 / 32000)));
+    return MID - Math.trunc(v * AMP / 127);
+  };
+  for (let i = 0; i < 127; i++) {
+    const y0 = yOf(i), y1 = yOf(i + 1), a = Math.min(y0, y1), b = Math.max(y0, y1);
+    g.fillRect(i, a, 1, Math.max(1, b - a));
+    g.fillRect(i + 1, y1, 1, 1);
+  }
+}
+
+function drawFacts() {
+  const m = tab.meta, note = noteName(m.clean_note);
+  const scaleDb = 20 * Math.log10(m.scale);
+  let dip = 0;
+  for (let i = 0; i + SUB < tab.level.length; i += SUB) {
+    const ends = Math.min(tab.level[i], tab.level[i + SUB]);
+    for (let s = 1; s < SUB; s++) dip = Math.max(dip, ends - tab.level[i + s]);
+  }
+  $('facts').innerHTML =
+    `clean up to <b>${note}</b> (${m.harmonics} harmonics)<br>` +
+    `whole-table scale <b>${scaleDb.toFixed(1)} dB</b><br>` +
+    `largest dip between two frames <b>${dip.toFixed(1)} dB</b><br>` +
+    `level at scan <b>${tab.level[Math.round(st.scan * SUB)].toFixed(1)} dB</b>`;
+}
+
+function drawNote() {
+  $('noteOut').textContent = noteName(st.note) + (tab && st.note > tab.meta.clean_note ? ', aliases' : '');
+}
+
+function drawAll() {
+  if (!tab) return;
+  drawWave(); drawSpec(); drawMap(); drawLevel(); drawOled(); drawFacts(); drawNote();
+}
+
+/* ── audio ────────────────────────────────────────────────────────────── */
+/* One note rendered by the lab's engine (lab.js): held at the scan position,
+ * or with the position swept first frame -> last -> first. */
+async function play(mode) {
+  const msg = $('audioMsg'), sweep = mode === 'sweep';
+  msg.textContent = 'rendering (the first one boots the engine) ...';
+  let r;
+  try {
+    r = await LAB.wtRender(flat(), st.range, st.note, Number(st.scan.toFixed(2)), mode);
+  } catch (e) { msg.textContent = e.message; return; }
+  const url = URL.createObjectURL(r.wav);
+  const got = await playWav(url,
+    { player: $('player'), save: $('saveWav'), msg,
+      name: `wt-${noteName(st.note)}-${sweep ? 'sweep' : 'f' + st.scan.toFixed(2)}.wav` });
+  URL.revokeObjectURL(url);
+  if (!got) return;
+  const clipped = r.clipped;
+  msg.textContent = `${noteName(st.note)}, ${sweep ? 'sweep' : 'frame ' + st.scan.toFixed(2)}` +
+                    (clipped ? `, ${clipped} clipped samples` : '');
+}
+
+/* The table for Vital, carrying what the device plays and nothing else: the
+ * 64 frames, each 256-sample cycle read out at Vital's 2048 samples the way
+ * AMY's oscillator reads it (render_lut: a straight line between neighbouring
+ * samples, wrapping inside the frame). The table's own samples land on every
+ * 8th output sample unchanged, and nothing is rescaled. The `clm ` chunk
+ * carries the frame size. Between frames Vital blends in its own way; AMY
+ * crossfades the two neighbouring frames linearly. */
+function vitalExport() {
+  const { x, meta } = tab, F = meta.frames, N = meta.cycle, M = 2048, UP = M / N;
+  const pcm = new Int16Array(F * M);
+  for (let f = 0; f < F; f++) for (let k = 0; k < N; k++) {
+    const b = x[f * N + k], c = x[f * N + ((k + 1) & (N - 1))];
+    for (let r = 0; r < UP; r++) pcm[f * M + k * UP + r] = Math.round(b + (c - b) * r / UP);
+  }
+  const name = `wt-${flat().map(v => v.toString(16).padStart(2, '0')).join('')}-r${st.range}.wav`;
+  saveBlob(wavBlob(pcm, 44100, `<!>${M} 10000000 wavetable (www.xferrecords.com)`), name);
+  $('audioMsg').textContent = `${name}: ${F} frames x ${M}`;
+}
+
+/* ── wiring ───────────────────────────────────────────────────────────── */
+function setScan(v) {
+  st.scan = Math.max(0, Math.min(63, v));
+  $('scan').value = st.scan;
+  $('scanOut').textContent = st.scan.toFixed(2);
+  drawAll();
+}
+
+buildGrid();
+if (location.hash.length > 1) {
+  const [a, r] = location.hash.slice(1).split(';');
+  const vals = a.split(',').map(Number);
+  if (vals.length === 15 && vals.every(Number.isFinite)) { setFlat(vals); st.range = Math.max(0, Math.min(2, Number(r) || 0)); }
+}
+syncInputs();
+$('range').addEventListener('change', e => { st.range = Number(e.target.value); refresh(); });
+$('scan').addEventListener('input', e => setScan(Number(e.target.value)));
+const mapScan = e => { const r = $('map').getBoundingClientRect(); setScan((e.clientX - r.left) / r.width * 64 - 0.5); };
+$('map').addEventListener('pointerdown', e => { $('map').setPointerCapture(e.pointerId); mapScan(e); });
+$('map').addEventListener('pointermove', e => { if (e.buttons) mapScan(e); });
+$('note').addEventListener('input', e => { st.note = Number(e.target.value); drawNote(); });
+$('playHold').onclick = () => play('hold');
+$('playSweep').onclick = () => play('sweep');
+$('vital').onclick = () => { if (tab) vitalExport(); };
+$('apply').onclick = () => LAB.apply('wt', { v: flat(), range: st.range }).then(
+  ok => { $('audioMsg').textContent = ok ? 'applied on the device tab' : 'no device tab is open'; },
+  e => { $('audioMsg').textContent = e.message; });
+window.addEventListener('resize', drawAll);
+drawNote();
+refresh();
+</script>
+</body>
+</html>

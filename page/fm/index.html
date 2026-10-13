@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lab: FM</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../common.css">
+<style>
+  #chart { display:block; width:100%; height:auto; background:#101216; border-radius:4px; user-select:none; }
+  #chart [data-op], #chart [data-out] { cursor:pointer; }
+  table { border-collapse:collapse; width:100%; }
+  th, td { padding:2px 4px; text-align:center; white-space:nowrap; }
+  th { font-weight:600; color:var(--dim); }
+  td:first-child, th:first-child { text-align:left; color:var(--dim); }
+  #prog td, #prog th { border-bottom:1px solid var(--line); }
+  #ops th.op { cursor:pointer; }
+  #ops .sel { background:#262a32; }
+  #ops .muted { opacity:.4; }
+  #ops button { width:100%; padding:1px 4px; }
+  .val { cursor:ns-resize; border:1px solid transparent; border-radius:3px; user-select:none; touch-action:none; }
+  .val:hover, .val:focus { border-color:var(--dim); outline:none; }
+  .bad { color:var(--bad); }
+  .hint { margin-top:6px; color:var(--dim); white-space:pre; overflow-x:auto; }
+  #initTxt { color:var(--text); margin-top:10px; }
+  #env { height:200px; } #note { height:140px; cursor:crosshair; touch-action:none; }
+  #zoom { height:220px; } #spec { height:220px; } #venv { height:240px; }
+  #mock { width:100%; height:auto; aspect-ratio:77 / 28; image-rendering:pixelated; background:#000; }
+  .num { width:64px; background:#262a32; color:var(--text); border:1px solid var(--line); border-radius:4px; padding:2px 4px; font:inherit; }
+  .k-loud { color:#f2f4f8; } .k-bright { color:#00d6c9; }
+</style>
+</head>
+<body>
+<nav><a href="../">lab</a> / FM</nav>
+<main>
+  <div>
+    <section>
+      <h2>ROUTING <span>- the voice as playing, DX7 sheet layout</span></h2>
+      <svg id="chart"></svg>
+      <div class="hint">click: select   shift-click: link / unlink from the selected operator   OUT bar: make it a carrier</div>
+      <div class="row">
+        <span id="algOut"></span>
+        <button id="algDn">&lt;</button><button id="algUp">&gt;</button>
+        <span id="fbOut"></span>
+        <button id="fbBtn"></button>
+        <button id="dflt">default</button>
+      </div>
+      <div class="facts bad" id="routeMsg"></div>
+    </section>
+    <section>
+      <h2>DEVICE PLOT <span>- the voice envelope at the page-2 plot's 77 x 28, one bit per pixel</span></h2>
+      <canvas id="mock" width="77" height="28"></canvas>
+      <div class="row">
+        <select id="mockMode">
+          <option value="loud">loudness + carriers alone</option>
+          <option value="loudbright">loudness + modulation</option>
+          <option value="op">selected operator + what it feeds</option>
+        </select>
+        <span class="dim">solid + dotted</span>
+      </div>
+    </section>
+    <section>
+      <h2>WAVEFORM <span>- 4 periods at the NOTE cursor, height scaled to their peak</span></h2>
+      <canvas id="zoom"></canvas>
+    </section>
+    <section>
+      <h2>PROGRAM <span>- the compiled render slots</span></h2>
+      <table id="prog"></table>
+      <div class="facts" id="progCap"></div>
+    </section>
+    <section>
+      <h2>AUDIO <span>- one note played by AMY on the host: 48 kHz, fixed point</span></h2>
+      <div class="row" style="margin-top:0">
+        <label for="noteIn">Note</label>
+        <input type="range" id="noteIn" min="24" max="96" step="1" value="60">
+        <output id="noteOut"></output>
+      </div>
+      <div class="row">
+        <label for="gateIn">Gate</label>
+        <input type="range" id="gateIn" min="0.1" max="4" step="0.1" value="1">
+        <output id="gateOut"></output>
+      </div>
+      <div class="row">
+        <span title="the sequencer row's ADSR on the control oscillator: a VCA over the carriers">Row ADSR</span>
+        <input class="num" type="number" id="rowA" min="2" max="60000" value="5" title="attack, ms">
+        <input class="num" type="number" id="rowD" min="0" max="60000" value="250" title="decay, ms">
+        <input class="num" type="number" id="rowS" min="0" max="100" value="60" title="sustain, %">
+        <input class="num" type="number" id="rowR" min="5" max="60000" value="200" title="release, ms">
+      </div>
+      <div class="row">
+        <button id="play">Play</button>
+        <label><input type="checkbox" id="auto" checked> auto</label>
+        <a id="saveWav" hidden>save WAV</a>
+      </div>
+      <audio id="player" controls></audio>
+      <div class="row">
+        <button id="init">fm_voice_t initializer</button>
+        <button id="copy" hidden>copy</button>
+        <button id="apply">Apply to device</button>
+      </div>
+      <div class="facts" id="audioMsg"></div>
+      <pre id="initTxt" hidden></pre>
+    </section>
+  </div>
+  <div class="plots">
+    <section>
+      <h2>OPERATORS <span>- wheel, drag or arrow keys step a value like the encoder; shift x10</span></h2>
+      <table id="ops"></table>
+    </section>
+    <section>
+      <h2>VOICE ENVELOPE <span>- AMY's own envelope values per block, dB re one carrier at full level</span></h2>
+      <canvas id="venv"></canvas>
+      <div class="legend"><span class="k-loud">bold: loudness (carriers x row ADSR)</span><span class="k-loud">dotted: carriers alone</span><span class="k-bright">modulation (sum of modulators)</span><span>thin: operators</span></div>
+      <div class="facts" id="venvMsg"></div>
+    </section>
+    <section>
+      <h2>ENVELOPES <span>- DX7 level 0..99 over time, sustain as a fixed stub</span></h2>
+      <canvas id="env"></canvas>
+    </section>
+    <section>
+      <h2>NOTE <span>- left channel, line at note-off. Click or drag to place the WAVEFORM cursor</span></h2>
+      <canvas id="note"></canvas>
+    </section>
+    <section>
+      <h2>SPECTROGRAM <span>- 2048 Hann, hop 512, dB re full scale (80 dB range); line: spectral centroid</span></h2>
+      <canvas id="spec"></canvas>
+    </section>
+  </div>
+</main>
+<script src="../common.js"></script>
+<script src="../hostsim.js"></script>
+<script src="../lab.js"></script>
+<script>
+'use strict';
+const COL = ['#5fb3ff', '#ffc857', '#ff7096', '#7ee081', '#c39bff', '#ff9f5a'];
+const ORDER = [5, 4, 3, 2, 1, 0];          /* operator indices in label order OP1..OP6 */
+const ERR = {
+  LOOP: 'refused: LOOP - that link would make a cycle',
+  NO_BUS: 'refused: NO BUS - no render order fits AMY\'s two buses',
+  INVALID: 'refused: INVALID',
+};
+const FIELDS = [
+  { label: 'coarse', f: 0 }, { label: 'fine', f: 1 }, { label: 'level', f: 2 },
+  { label: 'R1', f: 3 }, { label: 'R2', f: 4 }, { label: 'R3', f: 5 }, { label: 'R4', f: 6 },
+  { label: 'L1', f: 7 }, { label: 'L2', f: 8 }, { label: 'L3', f: 9 }, { label: 'L4', f: 10 },
+];
+const PAD_L = 40;                          /* left padding shared by NOTE and SPECTROGRAM */
+
+let voice = null;
+let rseq = 0, queued = 0, renderTimer = 0;
+let sel = 5, note = 60, gate = 1.0, auto = true;
+let pcm = null;      /* { rate, x: Int16Array (left), note, gate } of the last render */
+let trace = null;    /* the `trace` answer of the last render: AMY's envelope values per block */
+const row = [5, 250, 60, 200];             /* the row ADSR: ms, ms, %, ms */
+let sgram = null;    /* { img: offscreen canvas, t0, t1 } */
+let cursor = 0;      /* seconds */
+let startV = location.hash.slice(1);
+const cells = [];    /* per operator index: { th, mode, mute, to, f: [], all: [] } */
+
+/* -- requests ----------------------------------------------------------- */
+/* Commands run one at a time, each on the voice the one before it answered
+ * with: every edit builds on the last, whatever order the answers take. */
+let chain = Promise.resolve();
+function cmd(doName, args) {
+  queued++;
+  chain = chain.then(() => send(doName, args))
+               .catch(e => { $('routeMsg').textContent = String(e); })
+               .then(() => { queued--; flush(); });
+  return chain;
+}
+
+async function send(doName, args) {
+  const v = voice ? voice.v : startV;
+  try {
+    voice = await LAB.fmVoice(v, doName, args);
+  } catch (e) { $('routeMsg').textContent = e.message; return; }
+  history.replaceState(null, '', '#' + voice.v.join(','));
+  $('routeMsg').textContent = voice.err ? (ERR[voice.err] || 'refused: ' + voice.err) : '';
+  drawAll();
+  scheduleRender();
+}
+
+/* Encoder detents per "op,field". They add up while a command is queued and
+ * go out as one step, so a fast drag costs few requests and loses nothing. */
+const pend = new Map();
+function detent(op, field, d) {
+  const k = op + ',' + field;
+  pend.set(k, (pend.get(k) || 0) + d);
+  flush();
+}
+function flush() {
+  if (queued || !voice || !pend.size) return;
+  const [k, d] = pend.entries().next().value;
+  pend.delete(k);
+  if (d) cmd('step', k + ',' + d); else flush();
+}
+
+function scheduleRender() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(() => render(auto), 150);
+}
+
+/* One note rendered by the lab's engine (lab.js); played when `play`, else rendered for the plots only. */
+async function render(play) {
+  if (!voice) return;
+  const mine = ++rseq, msg = $('audioMsg'), g = gate, n = note;
+  const req = [voice.v, n, Number(g.toFixed(1)), row.slice()];
+  msg.textContent = 'rendering (the first one boots the engine) ...';
+  let out, got;
+  try {
+    out = await LAB.fmRender(...req);
+  } catch (e) { msg.textContent = e.message; return; }
+  if (play) {
+    const url = URL.createObjectURL(out.wav);
+    got = await playWav(url, { player: $('player'), save: $('saveWav'), msg, name: `fm-${noteName(n)}-${g.toFixed(1)}s.wav` });
+    URL.revokeObjectURL(url);
+  } else {
+    got = { buf: await out.wav.arrayBuffer() };
+  }
+  if (!got || mine !== rseq) return;
+  const w = wavPcm(got.buf), x = new Int16Array(Math.floor(w.data.length / w.channels));
+  for (let i = 0; i < x.length; i++) x[i] = w.data[i * w.channels];
+  pcm = { rate: w.rate, x, note: n, gate: g };
+  cursor = Math.min(cursor, x.length / w.rate);
+  const clipped = out.clipped;
+  msg.textContent = `${noteName(n)}, gate ${g.toFixed(1)} s, ${(x.length / w.rate).toFixed(2)} s rendered` +
+                    (clipped ? `, ${clipped} clipped samples` : '');
+  computeSpec();
+  const tr = await LAB.fmTrace(...req).catch(() => null);
+  if (mine !== rseq) return;
+  trace = tr;
+  drawPlots();
+}
+
+/* -- routing chart ------------------------------------------------------ */
+const lbl = i => voice.ops[i].label;
+const bitsLabel = m => ORDER.filter(i => m & (1 << i)).map(lbl).join('+') || '-';
+
+/* Rows by depth (carriers 0, a modulator one above its highest target),
+ * columns in label order, a modulator under its first target where free. */
+function layout() {
+  const ops = voice.ops, ob = voice.out_bit, n = ops.length, depth = new Array(n).fill(-1);
+  const dep = (i, guard) => {
+    if (depth[i] >= 0) return depth[i];
+    if (guard > n) return 0;
+    let d = 0;
+    if (ops[i].targets !== ob) for (let t = 0; t < n; t++) if (ops[i].targets & (1 << t)) d = Math.max(d, dep(t, guard + 1) + 1);
+    return depth[i] = d;
+  };
+  for (let i = 0; i < n; i++) dep(i, 0);
+  const maxD = Math.max(...depth), col = new Array(n).fill(-1);
+  for (let d = 0; d <= maxD; d++) {
+    const used = new Set();
+    for (const i of ORDER) {
+      if (depth[i] !== d) continue;
+      const first = ORDER.find(t => ops[i].targets !== ob && (ops[i].targets & (1 << t)));
+      let c = first !== undefined && col[first] >= 0 ? col[first] : 0;
+      while (used.has(c)) c = (c + 1) % 6;
+      used.add(c); col[i] = c;
+    }
+  }
+  return { depth, col, maxD };
+}
+
+function drawRouting() {
+  const { depth, col, maxD } = layout(), ops = voice.ops, ob = voice.out_bit;
+  const PX = 60, PY = 46, BW = 40, BH = 24, W = 360, top = 10;
+  const bx = i => 10 + col[i] * PX, by = i => top + (maxD - depth[i]) * PY;
+  const outY = top + (maxD + 1) * PY - 8, H = outY + 22;
+  let s = '';
+  ops.forEach((o, i) => {
+    const x0 = bx(i) + BW / 2, y0 = by(i) + BH;
+    if (o.targets === ob) s += `<line x1="${x0}" y1="${y0}" x2="${x0}" y2="${outY}" stroke="#8a93a3"/>`;
+    else ops.forEach((_, t) => {
+      if (o.targets & (1 << t)) s += `<line x1="${x0}" y1="${y0}" x2="${bx(t) + BW / 2}" y2="${by(t)}" stroke="#8a93a3"/>`;
+    });
+  });
+  s += `<rect data-out="1" x="10" y="${outY}" width="${W - 20}" height="12" rx="2" fill="#2c313a"/>`;
+  s += `<text data-out="1" x="${W / 2}" y="${outY + 10}" fill="#d8dce3" font-size="10" text-anchor="middle">OUT</text>`;
+  ops.forEach((o, i) => {
+    const x = bx(i), y = by(i), on = i === sel;
+    s += `<g data-op="${i}" opacity="${o.mute ? 0.35 : 1}">` +
+         `<rect x="${x}" y="${y}" width="${BW}" height="${BH}" rx="3" fill="${on ? COL[i] : '#1c1f25'}" stroke="${COL[i]}" stroke-width="1.5"/>` +
+         `<text x="${x + BW / 2}" y="${y + 16}" fill="${on ? '#14161a' : COL[i]}" font-size="11" text-anchor="middle">${o.label}</text>`;
+    if (voice.fb_op === i) s += `<path d="M${x + BW} ${y + 6} h7 v12 h-7" fill="none" stroke="${COL[i]}" stroke-width="1.5"/>`;
+    s += '</g>';
+  });
+  const svg = $('chart');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = s;
+}
+
+function chartClick(e) {
+  if (!voice) return;
+  if (e.target.closest('[data-out]')) { cmd('targets', sel + ',' + voice.out_bit); return; }
+  const g = e.target.closest('[data-op]');
+  if (!g) return;
+  const t = Number(g.dataset.op);
+  if (!e.shiftKey || t === sel) { select(t); return; }
+  const cur = voice.ops[sel].targets, ob = voice.out_bit;
+  let mask;
+  if (cur === ob) mask = 1 << t;
+  else if (cur & (1 << t)) mask = (cur & ~(1 << t)) || ob;
+  else mask = cur | (1 << t);
+  cmd('targets', sel + ',' + mask);
+}
+
+function select(i) { sel = i; drawAll(); drawPlots(); }
+
+/* -- tables ------------------------------------------------------------- */
+function drawProgram() {
+  const p = voice.program;
+  let s = '<tr><th>slot</th><th>op</th><th>byte</th><th>reads</th><th>writes</th><th>FB</th><th>bus 1</th><th>bus 2</th></tr>';
+  p.slots.forEach((sl, k) => {
+    const writes = sl.out === 0 ? 'out' : `bus ${sl.out}` + (sl.add ? ' +' : '');
+    s += `<tr><td>${k + 1}</td><td style="color:${COL[sl.op]}">${lbl(sl.op)}</td>` +
+         `<td>${sl.byte.toString(16).padStart(2, '0')}</td><td>${['-', 'bus 1', 'bus 2'][sl.in]}</td>` +
+         `<td>${writes}</td><td>${sl.fb ? 'fb' : ''}</td><td>${bitsLabel(sl.bus1)}</td><td>${bitsLabel(sl.bus2)}</td></tr>`;
+  });
+  $('prog').innerHTML = s;
+  $('progCap').textContent = voice.custom ? `custom RAM row (AMY index ${p.index} up)` : `AMY algorithm table row ${p.index}`;
+}
+
+/* A numeric cell that changes only in encoder detents through `do=step`. */
+function bindValue(el, op, field) {
+  el.tabIndex = 0;
+  el.classList.add('val');
+  const mul = e => e.shiftKey ? 10 : 1;
+  el.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (e.deltaY) detent(op, field, (e.deltaY < 0 ? 1 : -1) * mul(e));
+  }, { passive: false });
+  let y0 = null;
+  el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); el.focus(); y0 = e.clientY; });
+  el.addEventListener('pointermove', e => {
+    if (y0 === null || !e.buttons) return;
+    const n = Math.trunc((y0 - e.clientY) / 6);
+    if (n) { y0 -= n * 6; detent(op, field, n * mul(e)); }
+  });
+  el.addEventListener('pointerup', () => { y0 = null; });
+  el.addEventListener('keydown', e => {
+    const k = { ArrowUp: 1, ArrowDown: -1, PageUp: 10, PageDown: -10 }[e.key];
+    if (!k) return;
+    e.preventDefault();
+    detent(op, field, k * mul(e));
+  });
+}
+
+function buildOps() {
+  const tb = $('ops'), row = name => { const tr = tb.insertRow(); tr.insertCell().textContent = name; return tr; };
+  const hd = document.createElement('tr');
+  hd.append(document.createElement('th'));
+  tb.append(hd);
+  for (let i = 0; i < 6; i++) cells[i] = { f: [], all: [] };
+  ORDER.forEach(i => {
+    const th = document.createElement('th');
+    th.className = 'op'; th.style.color = COL[i];
+    th.onclick = () => select(i);
+    hd.append(th);
+    cells[i].th = th; cells[i].all.push(th);
+  });
+  const btnRow = (name, key, doName) => {
+    const tr = row(name);
+    ORDER.forEach(i => {
+      const td = tr.insertCell(), b = document.createElement('button');
+      b.onclick = () => cmd(doName, String(i));
+      td.append(b);
+      cells[i][key] = b; cells[i].all.push(td);
+    });
+  };
+  btnRow('mode', 'mode', 'fixed');
+  FIELDS.forEach(fd => {
+    const tr = row(fd.label);
+    ORDER.forEach(i => {
+      const td = tr.insertCell();
+      bindValue(td, i, fd.f);
+      cells[i].f[fd.f] = td; cells[i].all.push(td);
+    });
+  });
+  btnRow('mute', 'mute', 'mute');
+  const tr = row('TO');
+  ORDER.forEach(i => { const td = tr.insertCell(); cells[i].to = td; cells[i].all.push(td); });
+}
+
+function drawOps() {
+  voice.ops.forEach((o, i) => {
+    const c = cells[i], f = c.f;
+    c.th.textContent = o.label;
+    c.mode.textContent = o.fixed ? 'FIXED' : 'RATIO';
+    f[0].textContent = o.fixed ? Math.round(o.fixed_hz) + ' Hz' : o.ratio.toFixed(2);
+    f[1].textContent = o.fixed ? o.fixed_hz.toFixed(1) + ' Hz' : `A4: ${o.a4_hz.toFixed(1)} Hz`;
+    f[2].textContent = Math.round(o.level * 100) + ' %';
+    for (let k = 0; k < 4; k++) { f[3 + k].textContent = o.r[k] + ' = ' + o.t[k] + ' ms'; f[7 + k].textContent = String(o.l[k]); }
+    c.mute.textContent = o.mute ? 'muted' : 'mute';
+    c.to.textContent = o.targets === voice.out_bit ? 'OUT' : bitsLabel(o.targets);
+    c.all.forEach(el => { el.classList.toggle('sel', i === sel); el.classList.toggle('muted', o.mute); });
+  });
+}
+
+function drawCtl() {
+  $('algOut').textContent = voice.custom ? 'ALG CUST' : 'ALG ' + voice.algorithm;
+  $('fbOut').textContent = `FB ${Math.round(voice.feedback * 100)} %`;
+  $('fbBtn').textContent = voice.fb_op === sel ? 'FB off' : 'FB on ' + lbl(sel);
+}
+
+/* -- envelopes ---------------------------------------------------------- */
+function drawEnv() {
+  const { g, w, h } = ctxOf('env'), top = 6, padL = 24, padB = 14;
+  const pw = w - padL - 6, ph = h - top - padB, ops = voice.ops;
+  const maxT = Math.max(1, ...ops.map(o => o.t[0] + o.t[1] + o.t[2] + o.t[3]));
+  const stub = 0.1 * pw, sc = (pw - stub) / maxT, yOf = l => top + (99 - l) / 99 * ph;
+  g.strokeStyle = '#2c313a'; g.fillStyle = '#8a93a3'; g.lineWidth = 1;
+  [0, 25, 50, 75, 99].forEach(l => {
+    g.beginPath(); g.moveTo(padL, yOf(l)); g.lineTo(w, yOf(l)); g.stroke();
+    g.fillText(String(l), 2, yOf(l) + 4);
+  });
+  g.fillText('0', padL, h - 2);
+  g.textAlign = 'right'; g.fillText(maxT + ' ms + sustain', w - 2, h - 2); g.textAlign = 'left';
+  const order = [...ORDER.filter(i => i !== sel), sel];
+  order.forEach(i => {
+    const o = ops[i], t = o.t, l = o.l;
+    let x = padL;
+    const pts = [[x, l[3]]];
+    x += t[0] * sc; pts.push([x, l[0]]);
+    x += t[1] * sc; pts.push([x, l[1]]);
+    x += t[2] * sc; pts.push([x, l[2]]);
+    x += stub; pts.push([x, l[2]]);
+    x += t[3] * sc; pts.push([x, l[3]]);
+    g.strokeStyle = COL[i];
+    g.lineWidth = i === sel ? 2 : 1;
+    g.globalAlpha = i === sel ? 1 : 0.45;
+    g.setLineDash(o.level === 0 || o.mute ? [2, 3] : []);
+    g.beginPath();
+    pts.forEach(([px, lv], k) => k ? g.lineTo(px, yOf(lv)) : g.moveTo(px, yOf(lv)));
+    g.stroke();
+  });
+  g.setLineDash([]); g.globalAlpha = 1;
+}
+
+/* -- voice envelope ----------------------------------------------------- */
+const DB_TOP = 12, DB_BOT = -72, FLOOR = -60;      /* FLOOR: drawn as "inaudible below" */
+const dbOf = x => x > 0 ? Math.max(DB_BOT, 20 * Math.log10(x)) : DB_BOT;
+
+function drawVenv() {
+  const { g, w, h } = ctxOf('venv'), tr = trace, padB = 14, ph = h - padB, n = tr.n;
+  const xOf = b => PAD_L + b / n * (w - PAD_L), yOf = db => (DB_TOP - db) / (DB_TOP - DB_BOT) * ph;
+  g.fillStyle = '#191c22'; g.fillRect(PAD_L, yOf(FLOOR), w - PAD_L, ph - yOf(FLOOR));
+  g.lineWidth = 1; g.fillStyle = '#8a93a3';
+  for (let db = DB_TOP; db >= DB_BOT; db -= 12) {
+    g.strokeStyle = db === 0 ? '#4a5160' : '#2c313a';
+    g.beginPath(); g.moveTo(PAD_L, yOf(db)); g.lineTo(w, yOf(db)); g.stroke();
+    g.fillText(String(db), 2, Math.min(ph, yOf(db) + 4));
+  }
+  g.fillText('inaudible', PAD_L + 4, yOf(FLOOR) + 11);
+  const line = (a, color, lw, dash, alpha) => {
+    g.strokeStyle = color; g.lineWidth = lw; g.globalAlpha = alpha; g.setLineDash(dash);
+    g.beginPath();
+    for (let b = 0; b < n; b++) b ? g.lineTo(xOf(b), yOf(dbOf(a[b]))) : g.moveTo(xOf(b), yOf(dbOf(a[b])));
+    g.stroke();
+  };
+  tr.ops.forEach((a, i) => line(a, COL[i], i === sel ? 1.5 : 1, [], i === sel ? 1 : 0.4));
+  line(tr.bright, '#00d6c9', 1.5, [], 1);
+  line(tr.voice, '#f2f4f8', 1, [2, 3], 1);
+  line(tr.loud, '#f2f4f8', 2.5, [], 1);
+  g.setLineDash([]); g.globalAlpha = 1; g.lineWidth = 1;
+  g.strokeStyle = '#ff6b6b'; g.beginPath(); g.moveTo(xOf(tr.on), 0); g.lineTo(xOf(tr.on), ph); g.stroke();
+  g.fillStyle = '#8a93a3'; g.fillText('time as NOTE', PAD_L, h - 2);
+
+  const pk = tr.peak, d = x => x > 0 ? (20 * Math.log10(x)).toFixed(1) + ' dB' : 'off';
+  let msg = `loudness peak <b>${d(pk.loud)}</b>, carriers alone <b>${d(pk.voice)}</b>, modulation peak <b>${d(pk.bright)}</b>`;
+  if (dbOf(pk.loud) <= FLOOR) {
+    msg = '<b class="bad">SILENT</b> - ' + (dbOf(pk.voice) <= FLOOR ? 'no carrier rises above -60 dB (level, envelope or mute)'
+                                                                 : 'the row ADSR closes the voice') + '<br>' + msg;
+  }
+  $('venvMsg').innerHTML = msg;
+}
+
+/* The same curves at the size of the device's page-2 plot, one bit per pixel:
+ * solid and dotted are the only two line styles there. */
+function drawMock() {
+  const g = $('mock').getContext('2d'), tr = trace, n = tr.n, W = 77, H = 28;
+  const yOf = db => Math.round((DB_TOP - db) / (DB_TOP - DB_BOT) * (H - 1));
+  g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#7fd4ff';
+  const colY = (a, x) => {                   /* the column's peak, so a short attack keeps its top */
+    const b0 = Math.floor(x / W * n), b1 = Math.max(b0 + 1, Math.floor((x + 1) / W * n));
+    let m = 0;
+    for (let b = b0; b < b1 && b < n; b++) m = Math.max(m, a[b]);
+    return yOf(dbOf(m));
+  };
+  const curve = (a, dotted) => {
+    let prev = null;
+    for (let x = 0; x < W; x++) {
+      const y = colY(a, x);
+      if (dotted) { if (x % 2 === 0) g.fillRect(x, y, 1, 1); }
+      else g.fillRect(x, Math.min(prev === null ? y : prev, y), 1, Math.abs((prev === null ? y : prev) - y) + 1);
+      prev = y;
+    }
+  };
+  for (let x = 0; x < W; x += 4) g.fillRect(x, yOf(FLOOR), 1, 1);
+  const xOff = Math.min(W - 1, Math.round(tr.on / n * W));
+  for (let y = 0; y < H; y += 3) g.fillRect(xOff, y, 1, 1);
+  const mode = $('mockMode').value;
+  if (mode === 'loud') { curve(tr.voice, true); curve(tr.loud, false); }
+  else if (mode === 'loudbright') { curve(tr.bright, true); curve(tr.loud, false); }
+  else {
+    const o = voice.ops[sel], t = o.targets === voice.out_bit ? -1 : ORDER.find(i => o.targets & (1 << i));
+    curve(t === undefined || t < 0 ? tr.loud : tr.ops[t], true);
+    curve(tr.ops[sel], false);
+  }
+}
+
+/* -- rendered note ------------------------------------------------------ */
+const dur = () => pcm.x.length / pcm.rate;
+const tX = (t, w) => PAD_L + t / dur() * (w - PAD_L);
+
+function drawNote() {
+  const { g, w, h } = ctxOf('note'), x = pcm.x, mid = h / 2, amp = h / 2 - 4, pw = w - PAD_L;
+  g.strokeStyle = '#2c313a'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(PAD_L, mid); g.lineTo(w, mid); g.stroke();
+  g.fillStyle = '#f2f4f8';
+  for (let px = 0; px < pw; px++) {
+    const a = Math.floor(px / pw * x.length), b = Math.max(a + 1, Math.floor((px + 1) / pw * x.length));
+    let lo = 32767, hi = -32768;
+    for (let i = a; i < b && i < x.length; i++) { if (x[i] < lo) lo = x[i]; if (x[i] > hi) hi = x[i]; }
+    if (hi < lo) continue;
+    const y0 = mid - hi / 32768 * amp, y1 = mid - lo / 32768 * amp;
+    g.fillRect(PAD_L + px, y0, 1, Math.max(1, y1 - y0));
+  }
+  g.fillStyle = '#8a93a3';
+  for (let s = 0; s <= dur(); s += dur() > 4 ? 1 : 0.5) g.fillText(s.toFixed(1), tX(s, w) - (s ? 8 : 0), h - 2);
+  const vline = (t, color) => { g.strokeStyle = color; g.beginPath(); g.moveTo(tX(t, w), 0); g.lineTo(tX(t, w), h); g.stroke(); };
+  vline(pcm.gate, '#ff6b6b');
+  vline(cursor, '#5fb3ff');
+}
+
+function drawZoom() {
+  const { g, w, h } = ctxOf('zoom'), x = pcm.x, padL = 34, pw = w - padL, mid = h / 2;
+  const P = pcm.rate / (440 * Math.pow(2, (pcm.note - 69) / 12)), N = 4 * P, s0 = Math.round(cursor * pcm.rate);
+  let peak = 1;                               /* of the window: the trace fills the height at any level */
+  for (let i = s0; i <= s0 + N + 1 && i < x.length; i++) peak = Math.max(peak, Math.abs(x[i]));
+  const amp = (h / 2 - 16) / peak, db = 20 * Math.log10(peak / 32768);
+  g.lineWidth = 1; g.fillStyle = '#8a93a3';
+  [1, 0.5, 0, -0.5, -1].forEach(k => {
+    const y = mid - k * peak * amp;
+    g.strokeStyle = k === 0 ? '#4a5160' : '#2c313a';
+    g.beginPath(); g.moveTo(padL, y); g.lineTo(w, y); g.stroke();
+    g.fillText(k === 0 ? '0' : (k > 0 ? '+' : '-') + (Math.abs(k) === 1 ? '1' : '.5'), 2, y + 4);
+  });
+  g.strokeStyle = '#2c313a'; g.beginPath();
+  for (let q = 0; q <= 4; q++) { const xx = padL + pw * q / 4; g.moveTo(xx, 14); g.lineTo(xx, h - 14); }
+  g.stroke();
+  g.strokeStyle = '#f2f4f8'; g.lineWidth = 1.5; g.beginPath();
+  for (let px = 0; px <= pw; px++) {
+    const p = s0 + px / pw * N, i = Math.floor(p), fr = p - i;
+    if (i + 1 >= x.length) break;
+    const v = x[i] + (x[i + 1] - x[i]) * fr, y = mid - v * amp;
+    px ? g.lineTo(padL + px, y) : g.moveTo(padL + px, y);
+  }
+  g.stroke();
+  g.fillStyle = '#8a93a3';
+  g.fillText(`${noteName(pcm.note)} from ${cursor.toFixed(3)} s`, padL, 10);
+  g.textAlign = 'right'; g.fillText(`1 = ${db.toFixed(1)} dBFS`, w - 2, 10); g.textAlign = 'left';
+  for (let q = 1; q <= 4; q++) g.fillText(String(q), padL + pw * q / 4 - 8, h - 2);
+}
+
+/* STFT of the left channel, frames merged by maximum into <= 200 columns,
+ * bins into 256 rows over 0..12 kHz. */
+function computeSpec() {
+  const WIN = 2048, HOP = 512, ROWS = 256, x = pcm.x, rate = pcm.rate;
+  const frames = Math.floor((x.length - WIN) / HOP) + 1;
+  if (frames < 1) { sgram = null; return; }
+  const per = Math.ceil(frames / 200), cols = Math.ceil(frames / per);
+  const binMax = Math.floor(12000 / (rate / WIN)), bpr = binMax / ROWS;
+  const win = new Float32Array(WIN);
+  let wsum = 0;
+  for (let i = 0; i < WIN; i++) { win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (WIN - 1)); wsum += win[i]; }
+  const ref = 32768 * wsum / 2, db = new Float32Array(cols * ROWS).fill(-200);
+  const re = new Float32Array(WIN), im = new Float32Array(WIN);
+  const cSum = new Float32Array(cols), cCnt = new Float32Array(cols);
+  for (let f = 0; f < frames; f++) {
+    for (let i = 0; i < WIN; i++) { re[i] = x[f * HOP + i] * win[i]; im[i] = 0; }
+    fft(re, im);
+    const c = Math.floor(f / per);
+    let num = 0, den = 0;
+    for (let k = 1; k < binMax; k++) { const m = Math.hypot(re[k], im[k]); num += k * m; den += m; }
+    if (den > ref * 1e-3) { cSum[c] += num / den * rate / WIN; cCnt[c]++; }     /* frames above -60 dB only */
+    for (let r = 0; r < ROWS; r++) {
+      let m = 0;
+      for (let k = Math.floor(r * bpr); k < Math.floor((r + 1) * bpr); k++) m = Math.max(m, Math.hypot(re[k], im[k]));
+      const v = 20 * Math.log10(Math.max(1e-9, m / ref));
+      if (v > db[c * ROWS + r]) db[c * ROWS + r] = v;
+    }
+  }
+  const img = document.createElement('canvas');
+  img.width = cols; img.height = ROWS;
+  const ig = img.getContext('2d'), id = ig.createImageData(cols, ROWS);
+  const lut = Array.from({ length: 81 }, (_, d) => heat(d / 80).match(/\d+/g).map(Number));   /* per dB */
+  for (let c = 0; c < cols; c++) for (let r = 0; r < ROWS; r++) {
+    const [R, G, B] = lut[Math.max(0, Math.min(80, Math.round(db[c * ROWS + r] + 80)))], o = ((ROWS - 1 - r) * cols + c) * 4;
+    id.data[o] = R; id.data[o + 1] = G; id.data[o + 2] = B; id.data[o + 3] = 255;
+  }
+  ig.putImageData(id, 0, 0);
+  const cent = Array.from(cSum, (v, c) => cCnt[c] ? v / cCnt[c] : NaN);            /* Hz per column */
+  sgram = { img, cent, t0: (WIN / 2 - HOP / 2) / rate, t1: (cols * per * HOP + WIN / 2 - HOP / 2) / rate };
+}
+
+function drawSpec() {
+  const { g, w, h } = ctxOf('spec'), padB = 14, ph = h - padB;
+  if (!sgram) return;
+  g.imageSmoothingEnabled = false;
+  const x0 = tX(sgram.t0, w), x1 = Math.min(w, tX(sgram.t1, w));
+  g.drawImage(sgram.img, 0, 0, sgram.img.width * (x1 - x0) / (tX(sgram.t1, w) - x0), sgram.img.height, x0, 0, x1 - x0, ph);
+  g.strokeStyle = '#00d6c9'; g.lineWidth = 1.5; g.beginPath();
+  let pen = false;
+  sgram.cent.forEach((hz, c) => {
+    if (Number.isNaN(hz)) { pen = false; return; }
+    const x = x0 + (c + 0.5) / sgram.cent.length * (tX(sgram.t1, w) - x0), y = ph - Math.min(12000, hz) / 12000 * ph;
+    pen ? g.lineTo(x, y) : g.moveTo(x, y);
+    pen = true;
+  });
+  g.stroke();
+  g.fillStyle = '#8a93a3'; g.strokeStyle = '#2c313a'; g.lineWidth = 1;
+  [0, 2, 4, 6, 8, 10, 12].forEach(k => {
+    const y = ph - k / 12 * ph;
+    g.beginPath(); g.moveTo(PAD_L - 4, y); g.lineTo(PAD_L, y); g.stroke();
+    g.fillText(k + 'k', 2, Math.max(10, y + 4));
+  });
+  g.fillText('time as NOTE', PAD_L, h - 2);
+}
+
+function drawPlots() {
+  if (trace && voice) { drawVenv(); drawMock(); }
+  if (!pcm) return;
+  drawNote(); drawZoom(); drawSpec();
+}
+
+function drawAll() {
+  if (!voice) return;
+  drawRouting(); drawProgram(); drawOps(); drawCtl(); drawEnv();
+}
+
+/* -- wiring ------------------------------------------------------------- */
+const noteCursor = e => {
+  if (!pcm) return;
+  const r = $('note').getBoundingClientRect();
+  cursor = Math.max(0, Math.min(dur(), (e.clientX - r.left - PAD_L) / (r.width - PAD_L) * dur()));
+  drawNote(); drawZoom();
+};
+$('note').addEventListener('pointerdown', e => { $('note').setPointerCapture(e.pointerId); noteCursor(e); });
+$('note').addEventListener('pointermove', e => { if (e.buttons) noteCursor(e); });
+
+$('chart').addEventListener('click', chartClick);
+$('algDn').onclick = () => cmd('algo', '-1');
+$('algUp').onclick = () => cmd('algo', '1');
+bindValue($('fbOut'), 0, 11);
+$('fbBtn').onclick = () => { if (voice) cmd('fb', String(voice.fb_op === sel ? 255 : sel)); };
+$('dflt').onclick = () => cmd('default');
+
+$('noteIn').addEventListener('input', e => { note = Number(e.target.value); $('noteOut').textContent = noteName(note); scheduleRender(); });
+$('gateIn').addEventListener('input', e => { gate = Number(e.target.value); $('gateOut').textContent = gate.toFixed(1) + ' s'; scheduleRender(); });
+$('auto').addEventListener('change', e => { auto = e.target.checked; });
+['rowA', 'rowD', 'rowS', 'rowR'].forEach((id, k) => $(id).addEventListener('input', e => {
+  const el = e.target, v = Math.round(Number(el.value));
+  if (!Number.isFinite(v)) return;
+  row[k] = Math.max(Number(el.min), Math.min(Number(el.max), v));
+  scheduleRender();
+}));
+$('mockMode').addEventListener('change', () => { if (trace && voice) drawMock(); });
+$('play').onclick = () => { clearTimeout(renderTimer); render(true); };
+
+$('init').onclick = async () => {
+  if (!voice) return;
+  let text;
+  try {
+    text = await LAB.fmInit(voice.v);
+  } catch (e) { $('audioMsg').textContent = e.message; return; }
+  $('initTxt').textContent = text;
+  $('initTxt').hidden = false;
+  $('copy').hidden = false;
+};
+$('copy').onclick = () => navigator.clipboard.writeText($('initTxt').textContent)
+  .then(() => { $('audioMsg').textContent = 'initializer copied'; }, () => { $('audioMsg').textContent = 'copy failed'; });
+$('apply').onclick = () => {
+  if (!voice) return;
+  LAB.apply('fm', { v: voice.v }).then(
+    ok => { $('audioMsg').textContent = ok ? 'applied on the device tab' : 'no device tab is open'; },
+    e => { $('audioMsg').textContent = e.message; });
+};
+
+window.addEventListener('resize', () => { drawAll(); drawPlots(); });
+buildOps();
+$('noteOut').textContent = noteName(note);
+$('gateOut').textContent = gate.toFixed(1) + ' s';
+/* a hash the host rejects falls back to the default voice */
+cmd(null).then(() => { if (!voice && startV) { startV = ''; cmd(null); } });
+</script>
+</body>
+</html>
