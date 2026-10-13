@@ -6,7 +6,8 @@
 # builds it.
 #
 # Every hour, one channel after the other:
-#   next    when firmware main is ahead of the pin, check out the new commit,
+#   next    when the firmware's nightly branch is ahead of the pin, check out
+#           the new commit,
 #           require that config/sdkconfig.h has a setting for every Kconfig
 #           symbol it declares (tools/kconfig-gate.py), build native and wasm,
 #           and replay the smoke log through both (tools/smoke.py). Only when
@@ -83,8 +84,8 @@ jobs:
           site=$(sed -n 's/.*name="firmware-version" content="\([^"]*\)".*/\1/p' "web/${{ matrix.dir }}/index.html" 2>/dev/null | head -1)
           bump=0; build=0; fw=$pin
           if [ "${{ matrix.channel }}" = next ]; then
-            fw=$(git ls-remote "$FIRMWARE_URL" refs/heads/main | cut -f1)
-            [ -n "$fw" ] || { echo "cannot read firmware main"; exit 1; }
+            fw=$(git ls-remote "$FIRMWARE_URL" refs/heads/nightly | cut -f1)
+            [ -n "$fw" ] || { echo "cannot read firmware nightly"; exit 1; }
             if [ "$fw" != "$pin" ]; then bump=1; build=1; fi
           fi
           if [ $build = 0 ]; then
@@ -95,8 +96,8 @@ jobs:
           echo "HOSTSIM_VERSION=${fw:0:8}" >> "$GITHUB_ENV"
           {
             echo "### ${{ matrix.channel }}"
-            echo "Pinned firmware \`${pin:0:8}\`, site \`${site:-none}\`$([ "${{ matrix.channel }}" = next ] && echo ", firmware main \`${fw:0:8}\`")."
-            if [ $bump = 1 ]; then echo "Building firmware main; on success the pin moves and next/ is published."
+            echo "Pinned firmware \`${pin:0:8}\`, site \`${site:-none}\`$([ "${{ matrix.channel }}" = next ] && echo ", firmware nightly \`${fw:0:8}\`")."
+            if [ $bump = 1 ]; then echo "Building firmware nightly; on success the pin moves and next/ is published."
             elif [ $build = 1 ]; then echo "Building the pinned firmware for the site."
             else echo "Nothing to do."; fi
           } >> "$GITHUB_STEP_SUMMARY"
@@ -126,7 +127,7 @@ jobs:
         run: |
           git submodule update --init --filter=blob:none firmware
           if [ "${{ steps.plan.outputs.bump }}" = 1 ]; then
-            git -C firmware fetch --filter=blob:none origin main
+            git -C firmware fetch --filter=blob:none origin nightly
             git -C firmware checkout --quiet --detach "${{ steps.plan.outputs.fw }}"
           fi
           git -C firmware submodule update --init --depth 1 amy

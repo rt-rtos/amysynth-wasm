@@ -103,11 +103,12 @@ on every build, after the module links.
 The site is served from the `amysynth-web` repo in two channels: its root is
 the stable channel, `next/` the nightly. Its `update.sh` takes
 `out/wasm/site` and a channel and commits it with the version the page
-names. Here, main pins the nightly's firmware and `stable` the stable
-channel's; each branch carries the glue its firmware builds with.
+names. In the firmware repo, `nightly` is the development branch and main
+the verified one; here, main pins the nightly's firmware and `stable` the
+stable channel's, each with the glue its firmware builds with.
 
 `.github/workflows/site.yml` runs every hour, one channel after the other.
-For the nightly, when the firmware's main branch has moved past the
+For the nightly, when the firmware's `nightly` branch has moved past the
 `firmware` pin, it checks out the new firmware commit and stops before
 building if the firmware declares a Kconfig symbol `config/sdkconfig.h` has
 no setting for (`tools/kconfig-gate.py`): the web value is decided by hand,
@@ -122,9 +123,10 @@ firmware is built, checked and published the same way. The workflow can
 also be started by hand; `force` republishes both channels.
 
 Promotion is by hand, after the firmware was played through on the device:
-`tools/promote.sh <firmware commit>` moves the firmware's `stable` branch
-to it, moves `stable` here to the `Firmware <sha>` commit that pinned it,
-and starts the workflow, which rebuilds the root from that commit.
+`tools/promote.sh [<firmware commit>]` (default: the head of `nightly`)
+fast-forwards the firmware's main branch to it, moves `stable` here to the
+`Firmware <sha>` commit that pinned it, and starts the workflow, which
+rebuilds the root from that commit.
 
 ## Licence
 
