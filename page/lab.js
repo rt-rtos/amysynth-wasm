@@ -18,18 +18,23 @@ window.LAB = (() => {
   const FULL = 16383;
   let mod = null, booting = null, chain = Promise.resolve();
 
+  /* The single-file page embeds the module and its data in hostsim.js. */
+  const single = !!(document.querySelector('meta[name="single-file"]') || {}).content;
+
   async function boot() {
-    const get = async (f, optional) => {
-      const r = await fetch(f);
-      if (r.ok) return r.arrayBuffer();
-      if (optional && r.status === 404) return null;
-      throw new Error(`${f}: HTTP ${r.status}`);
-    };
-    const [wasm, data] = await Promise.all([get('../hostsim.wasm'), get('../hostsim.data', true)]);
-    const m = await createHostsim({
-      print: t => console.log(t), printErr: t => console.warn(t),
-      wasmBinary: wasm, getPreloadedPackage: () => (data ? data.slice(0) : null),
-    });
+    const opts = { print: t => console.log(t), printErr: t => console.warn(t) };
+    if (!single) {
+      const get = async (f, optional) => {
+        const r = await fetch(f);
+        if (r.ok) return r.arrayBuffer();
+        if (optional && r.status === 404) return null;
+        throw new Error(`${f}: HTTP ${r.status}`);
+      };
+      const [wasm, data] = await Promise.all([get('../hostsim.wasm'), get('../hostsim.data', true)]);
+      opts.wasmBinary = wasm;
+      opts.getPreloadedPackage = () => (data ? data.slice(0) : null);
+    }
+    const m = await createHostsim(opts);
     m._hs_boot();
     mod = m;
     step(1, ['cmd 0 tr.stop', 'cmd 0 amy.wire V5']);   /* V5: the lab's listening level */

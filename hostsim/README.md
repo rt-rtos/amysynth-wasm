@@ -165,8 +165,11 @@ How it differs from the native build:
   engine's own stack, which this does not measure.
 
 `./build.sh wasm --single` also writes
-`out/wasm/S3-Amysynth-<version>.html`: the whole site in one file
-that opens from disk (file://), for passing around before anything is hosted.
+`out/wasm/S3-Amysynth-<version>.html`: the device page in one file that opens
+from disk (file://), for passing around before anything is hosted, and the two
+lab pages beside it as `...-wt.html` and `...-fm.html`, each with its own copy
+of the module; the pages link each other by file name. Apply between them
+needs a BroadcastChannel across file:// pages, which browsers may refuse.
 The module is linked with `-sSINGLE_FILE` (base64: the default UTF-8 binary
 encoding would put NUL bytes into an inline script, which HTML parsing
 replaces) and `--embed-file` for drums.bin; `hostsim/single_file.py` inlines

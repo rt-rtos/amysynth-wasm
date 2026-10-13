@@ -11,8 +11,9 @@
 #   wasm    out/wasm/site, the static site, plus out/wasm/node and
 #           out/wasm/node-check (the module for node, and a checking build)
 #           Needs emcc on PATH (source emsdk_env.sh).
-#   --single  with wasm: also out/wasm/S3-Amysynth-<version>.html, the whole
-#           site in one file that opens from disk (file://)
+#   --single  with wasm: also out/wasm/S3-Amysynth-<version>.html, the device
+#           page in one file that opens from disk (file://), and the two lab
+#           pages beside it as ...-wt.html and ...-fm.html
 #
 # The firmware sources come from the firmware submodule; FW_ROOT points the
 # build at another checkout (a working tree with uncommitted changes). The

@@ -7,8 +7,8 @@
 #       .nojekyll and notices.txt into <out dir>/site, beside the module the
 #       build linked there
 #   assemble-site.sh single <repo> <firmware> <out dir> <single-file hostsim.js>
-#       <out dir>/S3-Amysynth-<version>.html from the site and the module
-#       linked with -sSINGLE_FILE
+#       <out dir>/S3-Amysynth-<version>.html (and -wt.html, -fm.html) from the
+#       site and the module linked with -sSINGLE_FILE
 #
 # The version is `git describe` of the firmware tree, or HOSTSIM_VERSION.
 set -euo pipefail
