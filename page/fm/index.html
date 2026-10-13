@@ -154,7 +154,8 @@ let trace = null;    /* the `trace` answer of the last render: AMY's envelope va
 const row = [5, 250, 60, 200];             /* the row ADSR: ms, ms, %, ms */
 let sgram = null;    /* { img: offscreen canvas, t0, t1 } */
 let cursor = 0;      /* seconds */
-let startV = location.hash.slice(1);
+let startV = '';
+try { startV = location.hash.slice(1); } catch (e) {}   /* a tab the single-file page wrote may refuse it */
 const cells = [];    /* per operator index: { th, mode, mute, to, f: [], all: [] } */
 
 /* -- requests ----------------------------------------------------------- */
@@ -174,7 +175,7 @@ async function send(doName, args) {
   try {
     voice = await LAB.fmVoice(v, doName, args);
   } catch (e) { $('routeMsg').textContent = e.message; return; }
-  history.replaceState(null, '', '#' + voice.v.join(','));
+  try { history.replaceState(null, '', '#' + voice.v.join(',')); } catch (e) {}   /* voice keeps the design */
   $('routeMsg').textContent = voice.err ? (ERR[voice.err] || 'refused: ' + voice.err) : '';
   drawAll();
   scheduleRender();

@@ -11,10 +11,16 @@
  * before a reboot; without IndexedDB they last until the page is closed.
  *
  * A lab page (wt/, fm/, lab.js) hands over a design on the BroadcastChannel
- * 'amysynth-lab': {kind: 'fm', v} or {kind: 'wt', v, range}. It goes into the
+ * 'amysynth-lab', or (the single-file lab tab) by postMessage to this
+ * window: {kind: 'fm', v} or {kind: 'wt', v, range}. It goes into the
  * running firmware through lab.c's apply calls, between steps, and is
- * answered {kind: 'ack', of} (or 'nack' with a reason before the first boot);
- * saving it is the ordinary project save. */
+ * answered {kind: 'ack', of} (or 'nack' with a reason before the first boot)
+ * on the same path; saving it is the ordinary project save.
+ *
+ * In the single-file page the Tools links ([data-lab]) open the lab pages in
+ * new tabs, written from the base64 documents the page carries
+ * (lab-<name>-b64) with this page's module text (hostsim-module) in place of
+ * the placeholder; a second click focuses the tab while it is open. */
 'use strict';
 window.EMU_WASM = (() => {
   const meta = name => (document.querySelector(`meta[name="${name}"]`) || {}).content || '';
@@ -65,32 +71,69 @@ window.EMU_WASM = (() => {
     if (mod && dirty && persistent) { dirty = false; sync(false).catch(e => console.warn(e)); }
   }, 2000);
 
-  /* A message handler runs between steps: hs_step() is synchronous. */
+  /* A message handler runs between steps: hs_step() is synchronous. The
+   * answer to a lab design, or null for anything else. */
+  function labApply(msg) {
+    msg = msg || {};
+    if (msg.kind !== 'fm' && msg.kind !== 'wt') return null;
+    if (!mod || !booted) return { kind: 'nack', reason: 'power on the device first' };
+    const v = Array.isArray(msg.v) ? msg.v.map(Number) : [];
+    if (v.length !== (msg.kind === 'fm' ? 83 : 15)) return { kind: 'nack', reason: 'bad design' };
+    if (msg.kind === 'fm') {
+      const p = mod._malloc(v.length * 8);
+      mod.HEAPF64.set(v, p >> 3);
+      mod._lab_fm_apply(p, v.length);
+      mod._free(p);
+      applied = 'Applied the FM voice from the lab';
+    } else {
+      const p = mod._malloc(v.length);
+      mod.HEAPU8.set(v.map(x => Math.max(0, Math.min(255, Math.round(x) || 0))), p);
+      mod._lab_wt_apply(p, Math.max(0, Math.min(2, Math.round(Number(msg.range)) || 0)));
+      mod._free(p);
+      applied = 'Applied the wavetable from the lab';
+    }
+    const line = document.getElementById('about');
+    if (line) line.textContent = about();
+    return { kind: 'ack', of: msg.kind };
+  }
+
   if (typeof BroadcastChannel !== 'undefined') {
     const lab = new BroadcastChannel('amysynth-lab');
     lab.onmessage = e => {
-      const msg = e.data || {};
-      if (msg.kind !== 'fm' && msg.kind !== 'wt') return;
-      if (!mod || !booted) { lab.postMessage({ kind: 'nack', reason: 'power on the device first' }); return; }
-      const v = Array.isArray(msg.v) ? msg.v.map(Number) : [];
-      if (v.length !== (msg.kind === 'fm' ? 83 : 15)) { lab.postMessage({ kind: 'nack', reason: 'bad design' }); return; }
-      if (msg.kind === 'fm') {
-        const p = mod._malloc(v.length * 8);
-        mod.HEAPF64.set(v, p >> 3);
-        mod._lab_fm_apply(p, v.length);
-        mod._free(p);
-        applied = 'Applied the FM voice from the lab';
-      } else {
-        const p = mod._malloc(v.length);
-        mod.HEAPU8.set(v.map(x => Math.max(0, Math.min(255, Math.round(x) || 0))), p);
-        mod._lab_wt_apply(p, Math.max(0, Math.min(2, Math.round(Number(msg.range)) || 0)));
-        mod._free(p);
-        applied = 'Applied the wavetable from the lab';
-      }
-      const line = document.getElementById('about');
-      if (line) line.textContent = about();
-      lab.postMessage({ kind: 'ack', of: msg.kind });
+      const reply = labApply(e.data);
+      if (reply) lab.postMessage(reply);
     };
+  }
+  window.addEventListener('message', e => {
+    if (!e.source || e.source === window) return;
+    const reply = labApply(e.data);
+    if (reply) e.source.postMessage(reply, '*');
+  });
+
+  /* The single-file lab tabs, by lab name. */
+  if (single) {
+    const tabs = {};
+    const text = id => {
+      const b64 = document.getElementById(id).textContent.trim();
+      return new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0)));
+    };
+    for (const a of document.querySelectorAll('[data-lab]')) {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        const name = a.dataset.lab;
+        if (tabs[name] && !tabs[name].closed) { tabs[name].focus(); return; }
+        /* textContent is the module as single_file.py inlined it, </script
+         * already escaped; the replace keeps that true whatever it holds. */
+        const module = document.getElementById('hostsim-module').textContent.replace(/<\/(script)/gi, '<\\/$1');
+        const html = text(`lab-${name}-b64`).replace('<!--HOSTSIM-MODULE-->', () => '<script>' + module + '</script>');
+        const w = window.open('', '_blank');
+        if (!w) return;
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+        tabs[name] = w;
+      });
+    }
   }
 
   function about() {

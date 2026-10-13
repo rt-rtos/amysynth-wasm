@@ -6,7 +6,9 @@
  * it costs nothing. Calls run one at a time in the order they were made.
  *
  * apply() hands a design to the device tab over the BroadcastChannel
- * 'amysynth-lab'; wasm.js applies it there and answers. */
+ * 'amysynth-lab', or, in a tab the single-file page wrote, by postMessage
+ * to window.opener; wasm.js applies it there and answers. In that tab the
+ * back link ([data-device-focus]) focuses the device tab. */
 'use strict';
 window.LAB = (() => {
   const RATE = 48000, BPS = RATE / 256;
@@ -20,6 +22,13 @@ window.LAB = (() => {
 
   /* The single-file page embeds the module and its data in hostsim.js. */
   const single = !!(document.querySelector('meta[name="single-file"]') || {}).content;
+
+  for (const a of document.querySelectorAll('[data-device-focus]')) {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      if (window.opener) window.opener.focus();
+    });
+  }
 
   async function boot() {
     const opts = { print: t => console.log(t), printErr: t => console.warn(t) };
@@ -260,6 +269,21 @@ window.LAB = (() => {
      * within 1 s, false when none answered; rejects with the device tab's
      * reason when it could not. */
     apply(kind, payload) {
+      if (single && window.opener) {
+        const dev = window.opener;
+        return new Promise((resolve, reject) => {
+          const done = (fn, x) => { clearTimeout(timer); window.removeEventListener('message', on); fn(x); };
+          const timer = setTimeout(() => done(resolve, false), 1000);
+          const on = e => {
+            if (e.source !== dev) return;
+            const msg = e.data || {};
+            if (msg.kind === 'ack' && msg.of === kind) done(resolve, true);
+            else if (msg.kind === 'nack') done(reject, new Error(msg.reason || 'the device tab refused'));
+          };
+          window.addEventListener('message', on);
+          dev.postMessage({ ...payload, kind }, '*');
+        });
+      }
       if (typeof BroadcastChannel === 'undefined')
         return Promise.reject(new Error('Apply needs BroadcastChannel, which this browser lacks; the URL hash keeps the design'));
       const ch = new BroadcastChannel('amysynth-lab');

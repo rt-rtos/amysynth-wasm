@@ -55,7 +55,8 @@ flowchart LR
 Needs gcc, zlib, Python 3, CMake 3.28 or later, Ninja, and for the site an
 Emscripten SDK (built here with emcc 6.0.11). `./build.sh san` is the
 native build with ASan and UBSan; `./build.sh wasm --single` adds the site
-as one HTML file that opens from disk. Everything else (the replay log
+as one HTML file that opens from disk, the lab pages opening as tabs from it
+and applying to it by postMessage. Everything else (the replay log
 grammar, the step protocol, what is stood in for, how the wasm build
 differs): [`hostsim/README.md`](hostsim/README.md).
 

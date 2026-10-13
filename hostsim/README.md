@@ -166,10 +166,13 @@ How it differs from the native build:
 
 `./build.sh wasm --single` also writes
 `out/wasm/S3-Amysynth-<version>.html`: the device page in one file that opens
-from disk (file://), for passing around before anything is hosted, and the two
-lab pages beside it as `...-wt.html` and `...-fm.html`, each with its own copy
-of the module; the pages link each other by file name. Apply between them
-needs a BroadcastChannel across file:// pages, which browsers may refuse.
+from disk (file://), for passing around before anything is hosted. The two lab
+pages are inside it as base64 documents; its Tools links write them into new
+tabs with the page's own copy of the module, so the module is in the file
+once, and a second click focuses the open tab. A lab tab's Apply goes to the
+device page by postMessage to `window.opener` instead of the BroadcastChannel,
+which browsers may refuse across file:// pages; the lab's URL hash may be
+refused too, and then the design lasts as long as the tab.
 The module is linked with `-sSINGLE_FILE` (base64: the default UTF-8 binary
 encoding would put NUL bytes into an inline script, which HTML parsing
 replaces) and `--embed-file` for drums.bin; `hostsim/single_file.py` inlines

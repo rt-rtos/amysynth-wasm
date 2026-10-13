@@ -223,7 +223,7 @@ const CHORDS = [
   ['SHIFT+0', BTN.B0, 0, 'Loop bounce: start, cancel a waiting one, or stop a running one'],
   ['SHIFT+0 hold', BTN.B0, 1600, 'Discard a running bounce'],
   ['SHIFT+1', BTN.B1, 0, 'ADSR editor: open on the current instrument, or commit and close'],
-  ['SHIFT+2', BTN.B2, 0, 'Step Trig popup open / close; in an editor: release the tab to the patch'],
+  ['SHIFT+2', BTN.B2, 0, 'Step Trig popup open / close; in an editor: release the tab to the patch; on the Mixer: fade the row'],
   ['SHIFT+3', BTN.B3, 0, 'Layer page; in an editor on a melodic row: flip row / layer block'],
 ];
 for (const [label, id, holdMs, title] of CHORDS) {
@@ -331,7 +331,7 @@ requestAnimationFrame(pollGamepad);
 /* ui_view_id_t (synth_ui.h) -> the CONTROLS.md section for that screen. */
 const VIEW_SECTION = ['Filter editor', 'LFO editor', 'DIST editor', 'Step Trig popup',
   'ADSR (graph) editor', 'Menu', 'Arp screen', 'Drone screens', 'Drone screens', 'Drone screens',
-  'Prog screen', 'FM screen', 'DEV screen', 'WT screen', 'Sequencer screen (Seq)'];
+  'Prog screen', 'FM screen', 'DEV screen', 'WT screen', 'Mixer screen', 'Sequencer screen (Seq)'];
 let helpSections = {}, helpView = -1;
 const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const inline = t => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
