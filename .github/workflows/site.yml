@@ -1,18 +1,27 @@
-# Rebuild and publish the site when the firmware's main branch moves.
+# Build and publish the two channels of the site.
 #
-# Every hour: when firmware main is ahead of the `firmware` pin, check out
-# the new commit, require that config/sdkconfig.h has a setting for every
-# Kconfig symbol it declares (tools/kconfig-gate.py), build native and wasm,
-# and replay the smoke log through both (tools/smoke.py). Only when all of that passes is the pin
-# moved (a "Firmware <sha>" commit on main) and the site pushed to
-# amysynth-web. When the pin is current but the site runs another firmware
-# (a bump made by hand, or a deploy that failed after the bump), the pinned
-# firmware is built, checked and published the same way.
+# The root of the site is the stable channel, built from this repo's `stable`
+# branch; next/ is the nightly, built from main. Each branch pins the firmware
+# its channel runs (the `firmware` submodule) together with the glue that
+# builds it.
+#
+# Every hour, one channel after the other:
+#   next    when firmware main is ahead of the pin, check out the new commit,
+#           require that config/sdkconfig.h has a setting for every Kconfig
+#           symbol it declares (tools/kconfig-gate.py), build native and wasm,
+#           and replay the smoke log through both (tools/smoke.py). Only when
+#           all of that passes is the pin moved (a "Firmware <sha>" commit on
+#           main) and next/ published.
+#   stable  tools/promote.sh moves the branch to a bump commit the nightly
+#           already built, and starts this workflow.
+# Either channel is built, checked and published the same way when its pin is
+# current but the site runs another firmware (a bump made by hand, a promotion,
+# or a deploy that failed after the bump).
 #
 # A failed run publishes nothing. Scheduled runs do not retry the same
-# firmware commit against the same commit of this repo; a fix here or a
-# newer firmware commit is tried on the next run. workflow_dispatch always
-# runs, and with `force` it rebuilds and republishes the pinned firmware.
+# firmware commit against the same commit of the channel's branch; a fix
+# there or a newer firmware commit is tried on the next run. workflow_dispatch
+# always runs, and with `force` it rebuilds and republishes both channels.
 #
 # Needs the secret WEB_DEPLOY_KEY: the private half of a deploy key with
 # write access on rt-rtos/amysynth-web.
@@ -41,9 +50,23 @@ env:
 
 jobs:
   site:
+    name: ${{ matrix.channel }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      max-parallel: 1   # both channels commit to amysynth-web
+      matrix:
+        include:
+          - channel: stable
+            ref: stable
+            dir: .
+          - channel: next
+            ref: main
+            dir: next
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.ref }}
 
       - name: Check out the site
         uses: actions/checkout@v5
@@ -52,24 +75,28 @@ jobs:
           ssh-key: ${{ secrets.WEB_DEPLOY_KEY }}
           path: web
 
-      - name: Compare firmware main, the pin and the site
+      - name: Compare the firmware, the pin and the site
         id: plan
         run: |
+          repo=$(git rev-parse HEAD)
           pin=$(git rev-parse HEAD:firmware)
-          fw=$(git ls-remote "$FIRMWARE_URL" refs/heads/main | cut -f1)
-          site=$(sed -n 's/.*name="firmware-version" content="\([^"]*\)".*/\1/p' web/index.html | head -1)
-          [ -n "$fw" ] || { echo "cannot read firmware main"; exit 1; }
-          bump=0; build=0
-          if [ "$fw" != "$pin" ]; then bump=1; build=1
-          elif [ "$site" != "${pin:0:8}" ] || [ "${{ inputs.force }}" = true ]; then build=1
+          site=$(sed -n 's/.*name="firmware-version" content="\([^"]*\)".*/\1/p' "web/${{ matrix.dir }}/index.html" 2>/dev/null | head -1)
+          bump=0; build=0; fw=$pin
+          if [ "${{ matrix.channel }}" = next ]; then
+            fw=$(git ls-remote "$FIRMWARE_URL" refs/heads/main | cut -f1)
+            [ -n "$fw" ] || { echo "cannot read firmware main"; exit 1; }
+            if [ "$fw" != "$pin" ]; then bump=1; build=1; fi
           fi
-          [ $bump = 1 ] || fw=$pin
-          echo "pin=$pin fw=$fw site=$site bump=$bump build=$build"
-          { echo "pin=$pin"; echo "fw=$fw"; echo "bump=$bump"; echo "build=$build"; } >> "$GITHUB_OUTPUT"
+          if [ $build = 0 ]; then
+            if [ "$site" != "${pin:0:8}" ] || [ "${{ inputs.force }}" = true ]; then build=1; fi
+          fi
+          echo "channel=${{ matrix.channel }} repo=$repo pin=$pin fw=$fw site=$site bump=$bump build=$build"
+          { echo "repo=$repo"; echo "pin=$pin"; echo "fw=$fw"; echo "bump=$bump"; echo "build=$build"; } >> "$GITHUB_OUTPUT"
           echo "HOSTSIM_VERSION=${fw:0:8}" >> "$GITHUB_ENV"
           {
-            echo "Pinned firmware \`${pin:0:8}\`, firmware main \`${fw:0:8}\`, site \`${site:-none}\`."
-            if [ $bump = 1 ]; then echo "Building firmware main; on success the pin moves and the site is published."
+            echo "### ${{ matrix.channel }}"
+            echo "Pinned firmware \`${pin:0:8}\`, site \`${site:-none}\`$([ "${{ matrix.channel }}" = next ] && echo ", firmware main \`${fw:0:8}\`")."
+            if [ $bump = 1 ]; then echo "Building firmware main; on success the pin moves and next/ is published."
             elif [ $build = 1 ]; then echo "Building the pinned firmware for the site."
             else echo "Nothing to do."; fi
           } >> "$GITHUB_STEP_SUMMARY"
@@ -80,7 +107,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .ci-failed
-          key: failed-${{ steps.plan.outputs.fw }}-${{ github.sha }}
+          key: failed-${{ matrix.channel }}-${{ steps.plan.outputs.fw }}-${{ steps.plan.outputs.repo }}
           lookup-only: true
 
       - name: Decide
@@ -147,7 +174,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: steps.go.outputs.go == '1'
         with:
-          name: site-${{ env.HOSTSIM_VERSION }}
+          name: site-${{ matrix.channel }}-${{ env.HOSTSIM_VERSION }}
           path: out/wasm/site
 
       - name: Move the pin
@@ -174,7 +201,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           # update.sh fails to commit when the build matches the site
-          ./update.sh ../out/wasm/site || git diff --cached --quiet
+          ./update.sh ../out/wasm/site ${{ matrix.dir }} || git diff --cached --quiet
           git push origin HEAD:main
 
       - name: Remember the failure
@@ -185,4 +212,4 @@ jobs:
         if: failure() && steps.go.outputs.go == '1' && github.event_name == 'schedule'
         with:
           path: .ci-failed
-          key: failed-${{ steps.plan.outputs.fw }}-${{ github.sha }}
+          key: failed-${{ matrix.channel }}-${{ steps.plan.outputs.fw }}-${{ steps.plan.outputs.repo }}

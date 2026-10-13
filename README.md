@@ -100,22 +100,31 @@ on every build, after the module links.
 
 ## Publishing
 
-The site is served from the `amysynth-web` repo. Its `update.sh` takes
-`out/wasm/site` and commits it with the version the page names.
+The site is served from the `amysynth-web` repo in two channels: its root is
+the stable channel, `next/` the nightly. Its `update.sh` takes
+`out/wasm/site` and a channel and commits it with the version the page
+names. Here, main pins the nightly's firmware and `stable` the stable
+channel's; each branch carries the glue its firmware builds with.
 
-`.github/workflows/site.yml` does this every hour when the firmware's main
-branch has moved past the `firmware` pin. It checks out the new firmware
-commit and stops before building if the firmware declares a Kconfig symbol
-`config/sdkconfig.h` has no setting for (`tools/kconfig-gate.py`): the web
-value is decided by hand, with a line added there. Then it builds
-native and wasm and runs `tools/smoke.py --wasm`, which loads every built-in
-template in both builds, requires each to play above -60 dBFS, and requires
-button 3 to change the screen. Only a run that passes all of it moves the
-pin (a `Firmware <sha>: <subject>` commit here) and publishes the site. A
-failed run publishes nothing and is not retried until this repo or the
-firmware has a new commit. When the pin is current but the site runs another
-firmware, the pinned firmware is built, checked and published. The workflow
-can also be started by hand; `force` republishes the pinned firmware.
+`.github/workflows/site.yml` runs every hour, one channel after the other.
+For the nightly, when the firmware's main branch has moved past the
+`firmware` pin, it checks out the new firmware commit and stops before
+building if the firmware declares a Kconfig symbol `config/sdkconfig.h` has
+no setting for (`tools/kconfig-gate.py`): the web value is decided by hand,
+with a line added there. Then it builds native and wasm and runs
+`tools/smoke.py --wasm`, which loads every built-in template in both builds,
+requires each to play above -60 dBFS, and requires button 3 to change the
+screen. Only a run that passes all of it moves the pin (a `Firmware <sha>:
+<subject>` commit on main) and publishes `next/`. A failed run publishes
+nothing and is not retried until the branch or the firmware has a new
+commit. Either channel whose pin is current but whose page runs another
+firmware is built, checked and published the same way. The workflow can
+also be started by hand; `force` republishes both channels.
+
+Promotion is by hand, after the firmware was played through on the device:
+`tools/promote.sh <firmware commit>` moves the firmware's `stable` branch
+to it, moves `stable` here to the `Firmware <sha>` commit that pinned it,
+and starts the workflow, which rebuilds the root from that commit.
 
 ## Licence
 
