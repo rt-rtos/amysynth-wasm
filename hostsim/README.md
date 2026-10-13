@@ -137,6 +137,8 @@ all URLs relative:
 |---|---|
 | `index.html` | `page/index.html`, with the version in a meta tag and the in-page backend loaded. It opens on a template picker built from what `pr.tpl` lists; a pick starts the audio, queues the load and presses play 200 ms later, after the UI task has applied it |
 | `wasm.js` | the in-page backend: same `step(blocks, events)` as the page's HTTP backend, which talks to a server running `hostsim serve` (no such server is in this repo) |
+| `lab.js` | the lab pages' backend: an instance of the module of their own (no `/proj`, transport stopped at boot), driven through the `lab_*` calls of `lab.c` |
+| `wt/index.html`, `fm/index.html` | the custom wavetable builder (patch 288) and the FM Custom builder (patch 276), opened in new tabs from the page's Tools links |
 | `hostsim.js`, `hostsim.wasm` | the module; exports `hs_boot`, `hs_step` and getters for the answer |
 | `hostsim.data` | the drum banks (`tools/gen-drums.py`), preloaded at `/components/amy/drums.bin` |
 | `controls.md`, `notices.txt` | CONTROLS.md; the attributions and the licence texts of what is compiled in |
@@ -148,6 +150,11 @@ How it differs from the native build:
   (`AMY_NO_MINIAUDIO`) and its MIDI device layer is replaced by no-ops
   (`AMY_HOST_MIDI`); `hostsim.c` supplies the empty platform init.
 - The page calls `hs_step()` directly; there is no stdin protocol.
+- A lab page runs a second instance of the same module in its own tab and
+  never mounts `/proj`; its Apply posts the design on the BroadcastChannel
+  `amysynth-lab`, and the device tab applies it between steps
+  (`lab_fm_apply`, `lab_wt_apply`) and answers, so it persists through the
+  ordinary project save.
 - Projects: `/proj` in the module filesystem, mirrored to the browser's
   IndexedDB every 2 s and before a reboot; without IndexedDB they last until
   the page closes. The page says which.
