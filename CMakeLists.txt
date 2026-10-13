@@ -199,12 +199,17 @@ endif()
 
 # The static site: the module, its preloaded data, the page. Links run in
 # their output directory so the loader names its data file without a path.
+# The lab pages' calls (hostsim/lab.c).
+set(LAB_EXPORTS _lab_wt_table _lab_wt_blend _lab_wt_meta _lab_wt_arm _lab_wt_ready _lab_wt_note
+    _lab_wt_pos _lab_wt_apply _lab_fm_voice _lab_fm_init _lab_fm_arm _lab_fm_note
+    _lab_fm_trace_sample _lab_fm_apply)
+list(JOIN LAB_EXPORTS , LAB_EXPORTS)
 set(PRELOAD --preload-file ${DRUMS}@${DRUMS_AT})
 set(LF -lm -sMODULARIZE=1 -sEXPORT_NAME=createHostsim -sALLOW_MEMORY_GROWTH=1
     -sINITIAL_MEMORY=64MB -sSTACK_SIZE=${HOSTSIM_WASM_STACK} --no-entry
     -sINCOMING_MODULE_JS_API=wasmBinary,getPreloadedPackage,locateFile,print,printErr
-    -sEXPORTED_FUNCTIONS=_hs_boot,_hs_step,_hs_json,_hs_json_len,_hs_frame,_hs_frame_len,_hs_audio,_hs_audio_len,_malloc,_free)
-set(RT FS,HEAPU8,HEAP16,UTF8ToString,stringToNewUTF8)
+    -sEXPORTED_FUNCTIONS=_hs_boot,_hs_step,_hs_json,_hs_json_len,_hs_frame,_hs_frame_len,_hs_audio,_hs_audio_len,_malloc,_free,${LAB_EXPORTS})
+set(RT FS,HEAPU8,HEAP16,HEAPF64,UTF8ToString,stringToNewUTF8)
 # hs_link(<dir> <outputs> <flags...>): link the module into <dir>/hostsim.js.
 function(hs_link dir outputs)
     list(TRANSFORM outputs PREPEND ${dir}/)
