@@ -3,15 +3,16 @@
 # the wasm build (CMakeLists.txt) on every build, so the version is current.
 #
 #   assemble-site.sh site <repo> <firmware> <out dir> <emscripten dir>
-#       the page, its scripts, controls.md, .nojekyll and notices.txt into
-#       <out dir>/site, beside the module the build linked there
+#       the page, its scripts, the lab pages (wt/, fm/), controls.md,
+#       .nojekyll and notices.txt into <out dir>/site, beside the module the
+#       build linked there
 #   assemble-site.sh single <repo> <firmware> <out dir> <single-file hostsim.js>
 #       <out dir>/S3-Amysynth-<version>.html from the site and the module
 #       linked with -sSINGLE_FILE
 #
 # The version is `git describe` of the firmware tree, or HOSTSIM_VERSION.
 set -euo pipefail
-[ $# = 5 ] || { sed -n '5,10p' "$0" >&2; exit 2; }
+[ $# = 5 ] || { sed -n '5,11p' "$0" >&2; exit 2; }
 STEP=$1; R=$2; FW=$3; OUT=$4
 SITE=$OUT/site
 VERSION=${HOSTSIM_VERSION:-$(git -C "$FW" describe --tags --always --dirty)}
@@ -22,7 +23,7 @@ single)
     python3 "$R/hostsim/single_file.py" "$SITE" "$5" "$OUT/S3-Amysynth-$VERSION.html"
     exit 0;;
 site) EM=$5;;
-*) sed -n '5,10p' "$0" >&2; exit 2;;
+*) sed -n '5,11p' "$0" >&2; exit 2;;
 esac
 
 # The site holds only what this build puts there: the module the build
@@ -30,18 +31,22 @@ esac
 find "$SITE" -mindepth 1 -maxdepth 1 ! -name hostsim.js ! -name hostsim.wasm ! -name hostsim.data \
     -exec rm -rf {} +
 
-# The page with the in-browser backend: relative URLs, the version, a title
-# instead of the lab's navigation.
+# The page with the in-browser backend: relative URLs, the version, a title.
 sed -e 's|href="/common.css"|href="common.css"|' -e 's|src="/common.js"|src="common.js"|' \
     -e 's|<script src="common.js"></script>|<script src="common.js"></script>\n<script src="hostsim.js"></script>\n<script src="wasm.js"></script>|' \
     -e "s|<meta charset=\"utf-8\">|<meta charset=\"utf-8\">\n<meta name=\"firmware-version\" content=\"$VERSION\">|" \
     -e 's|<title>lab: device</title>|<title>S3-Amysynth in the browser</title>\n<link rel="icon" href="data:,">|' \
-    -e 's|<nav><a href="/">lab</a> / device</nav>|<nav>S3-Amysynth: the device in the browser</nav>|' \
     "$R/page/index.html" > "$SITE/index.html"
-for want in 'src="wasm.js"' 'name="firmware-version"' '<nav>S3-Amysynth'; do
+for want in 'src="wasm.js"' 'name="firmware-version"' '<nav>S3-Amysynth: the device in the browser. Tools:'; do
     grep -q "$want" "$SITE/index.html" || { echo "page patch missed: $want" >&2; exit 1; }
 done
 cp "$R/page/wasm.js" "$R/page/common.css" "$R/page/common.js" "$SITE/"
+# The lab pages, one directory down, on their own instance of the module
+# (lab.js).
+mkdir -p "$SITE/wt" "$SITE/fm"
+cp "$R/page/lab.js" "$SITE/"
+cp "$R/page/wt/index.html" "$SITE/wt/index.html"
+cp "$R/page/fm/index.html" "$SITE/fm/index.html"
 cp "$FW/CONTROLS.md" "$SITE/controls.md"
 # GitHub Pages runs Jekyll unless told not to, and Jekyll renders controls.md
 # to controls.html, which the page does not fetch.
