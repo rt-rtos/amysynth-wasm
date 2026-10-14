@@ -166,7 +166,8 @@ How it differs from the native build:
 
 `./build.sh wasm --single` also writes
 `out/wasm/S3-Amysynth-<version>.html`: the device page in one file that opens
-from disk (file://), for passing around before anything is hosted. The two lab
+from disk (file://), for passing around before anything is hosted. Writing it
+removes the single-file pages of other versions from `out/wasm`. The two lab
 pages are inside it as base64 documents; its Tools links write them into new
 tabs with the page's own copy of the module, so the module is in the file
 once, and a second click focuses the open tab. A lab tab's Apply goes to the

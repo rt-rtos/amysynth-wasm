@@ -8,11 +8,12 @@
 #       build linked there
 #   assemble-site.sh single <repo> <firmware> <out dir> <single-file hostsim.js>
 #       <out dir>/S3-Amysynth-<version>.html, the lab pages inside it, from
-#       the site and the module linked with -sSINGLE_FILE
+#       the site and the module linked with -sSINGLE_FILE; the single-file
+#       pages of other versions in <out dir> are removed once it is written
 #
 # The version is `git describe` of the firmware tree, or HOSTSIM_VERSION.
 set -euo pipefail
-[ $# = 5 ] || { sed -n '5,11p' "$0" >&2; exit 2; }
+[ $# = 5 ] || { sed -n '5,12p' "$0" >&2; exit 2; }
 STEP=$1; R=$2; FW=$3; OUT=$4
 SITE=$OUT/site
 VERSION=${HOSTSIM_VERSION:-$(git -C "$FW" describe --tags --always --dirty)}
@@ -20,10 +21,12 @@ VERSION=${HOSTSIM_VERSION:-$(git -C "$FW" describe --tags --always --dirty)}
 
 case $STEP in
 single)
-    python3 "$R/hostsim/single_file.py" "$SITE" "$5" "$OUT/S3-Amysynth-$VERSION.html"
+    PAGE=$OUT/S3-Amysynth-$VERSION.html
+    python3 "$R/hostsim/single_file.py" "$SITE" "$5" "$PAGE"
+    find "$OUT" -maxdepth 1 -name 'S3-Amysynth-*.html' ! -path "$PAGE" -delete
     exit 0;;
 site) EM=$5;;
-*) sed -n '5,11p' "$0" >&2; exit 2;;
+*) sed -n '5,12p' "$0" >&2; exit 2;;
 esac
 
 # The site holds only what this build puts there: the module the build

@@ -390,6 +390,11 @@ static void boot(void)
     cfg.max_synths = SYNTH_SLOT_COUNT + 1;
 #endif
     cfg.max_buses = FX_BUS_COUNT;
+    /* KS_NO_ROW marks firmware still on the shared KS ring pool (AMY before
+     * 1.2.200), whose ks_oscs is the ring count; from 1.2.200 each KS osc
+     * gets its own ring and the default ks_oscs (on) is kept. Drop the old
+     * branch once the firmware submodule is past the sync. */
+#ifdef KS_NO_ROW
 #if CONFIG_SEQ_KS_RINGS > 0
     cfg.ks_oscs = CONFIG_SEQ_KS_RINGS;
 #else
@@ -400,6 +405,7 @@ static void boot(void)
 #endif
         cfg.ks_oscs = (uint8_t)rings;
     }
+#endif
 #endif
     cfg.overload_threshold = 0.0f;
     drum_cache_init(&g_host_drums_part);     /* gamma9001_pcm_mount() */
