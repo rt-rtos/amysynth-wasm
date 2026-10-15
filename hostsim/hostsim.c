@@ -390,17 +390,8 @@ static void boot(void)
     cfg.max_synths = SYNTH_SLOT_COUNT + 1;
 #endif
     cfg.max_buses = FX_BUS_COUNT;
-#if CONFIG_SEQ_KS_RINGS > 0
-    cfg.ks_oscs = CONFIG_SEQ_KS_RINGS;
-#else
-    {
-        uint16_t rings = sequencer_core_ks_row_demand(CONFIG_SEQ_KS_LAYERS);
-#if CONFIG_SEQ_KS_RINGS_IN_PSRAM
-        rings += sequencer_core_arp_voices();
-#endif
-        cfg.ks_oscs = (uint8_t)rings;
-    }
-#endif
+    /* Karplus-Strong: as main.c, AMY's default ks_oscs stays on; each KS
+     * osc takes its ring at its first note-on. */
     cfg.overload_threshold = 0.0f;
     drum_cache_init(&g_host_drums_part);     /* gamma9001_pcm_mount() */
     amy_start(cfg);

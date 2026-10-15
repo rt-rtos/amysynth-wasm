@@ -9,6 +9,10 @@ mono int16 LE @22050 Hz). Does not regenerate any header: the vendored
 components/amy/src/pcm_gamma9001.h is the map this blob must match, and the
 script verifies every offset/length pair against it before writing.
 
+A firmware checkout without the amy submodule (a mirror that strips it)
+carries the finished blob as components/amy/drums.bin, the file the device
+flashes; it is copied after the same size check against the map.
+
 Usage: python3 tools/gen-drums.py <firmware root> <out file>
 """
 import json
@@ -21,6 +25,7 @@ if len(sys.argv) != 3:
     sys.exit(__doc__.strip().splitlines()[-1])
 FW = sys.argv[1]
 SOUNDS = os.path.join(FW, "amy", "sounds", "gamma9001")
+SHIPPED = os.path.join(FW, "components", "amy", "drums.bin")
 VENDORED_MAP = os.path.join(FW, "components", "amy", "src", "pcm_gamma9001.h")
 OUT = sys.argv[2]
 ROM_BANK = "tr808"  # baked into pcm_gamma808.h, not part of drums.bin
@@ -45,7 +50,20 @@ def parse_vendored_map():
     return num, frames, [(int(a), int(b)) for a, b in entries]
 
 
+def copy_shipped():
+    num, total_frames, _vmap = parse_vendored_map()
+    size = os.path.getsize(SHIPPED)
+    if size != total_frames * 2:
+        sys.exit(f"{SHIPPED}: {size} bytes != GAMMA9001_BIN_FRAMES*2 {total_frames * 2}")
+    with open(SHIPPED, "rb") as src, open(OUT, "wb") as dst:
+        dst.write(src.read())
+    print(f"OK: {OUT} ({size} bytes, {num} samples, copied from {SHIPPED}, size verified)")
+
+
 def main():
+    if not os.path.isdir(SOUNDS) and os.path.isfile(SHIPPED):
+        copy_shipped()
+        return
     manifest = json.load(open(os.path.join(SOUNDS, "manifest.json")))
     entries = [m for m in manifest if m["bank"] != ROM_BANK]
     num, total_frames, vmap = parse_vendored_map()
