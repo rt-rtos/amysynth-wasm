@@ -379,7 +379,7 @@ static void boot(void)
     cfg.platform.multithread = 0;
     cfg.amy_external_sequencer_hook = seq_tick_hook;
     cfg.amy_external_bus_postprocess_hook = clip_bounce_bus_hook;
-    cfg.max_sequencer_tags = SEQ_CLIP_TAG_MAX + 2;
+    cfg.max_sequencer_tags = SEQ_AMY_SEQUENCE_SLOTS;
     /* As main.c, plus one synth above the app's for the lab pages (lab.c's
      * LAB_SYNTH). */
 #ifdef AMY_SYNTH_COUNT
