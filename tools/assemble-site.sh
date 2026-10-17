@@ -8,8 +8,8 @@
 #       build linked there
 #   assemble-site.sh single <repo> <firmware> <out dir> <single-file hostsim.js>
 #       <out dir>/S3-Amysynth-<version>.html, the lab pages inside it, from
-#       the site and the module linked with -sSINGLE_FILE; the single-file
-#       pages of other versions in <out dir> are removed once it is written
+#       the site and the module linked with -sSINGLE_FILE; of the pages named
+#       by a git describe version, the newest three stay, older ones go
 #
 # The version is `git describe` of the firmware tree, or HOSTSIM_VERSION.
 set -euo pipefail
@@ -23,7 +23,15 @@ case $STEP in
 single)
     PAGE=$OUT/S3-Amysynth-$VERSION.html
     python3 "$R/hostsim/single_file.py" "$SITE" "$5" "$PAGE"
-    find "$OUT" -maxdepth 1 -name 'S3-Amysynth-*.html' ! -path "$PAGE" -delete
+    # Only pages named like a `git describe` (<tag>-<n>-g<hash>, or a bare
+    # hash, each with an optional -dirty) are this script's to age out, by
+    # modification time. A page under any other name was saved on purpose.
+    kept=0
+    while IFS= read -r f; do
+        [[ ${f##*/} =~ ^S3-Amysynth-(.+-g)?[0-9a-f]{7,}(-dirty)?\.html$ ]] || continue
+        kept=$((kept + 1))
+        [ $kept -le 3 ] || rm -f -- "$f"
+    done < <(find "$OUT" -maxdepth 1 -name 'S3-Amysynth-*.html' -printf '%T@ %p\n' | sort -rn | cut -d' ' -f2-)
     exit 0;;
 site) EM=$5;;
 *) sed -n '5,12p' "$0" >&2; exit 2;;
