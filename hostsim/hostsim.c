@@ -41,6 +41,10 @@
 #include "custompatches/wavetable_bank.h"
 #include "custompatches/sample_rec.h"
 #include "custompatches/clip_bounce.h"
+#if defined(__has_include) && __has_include("bus_dyn.h")
+#include "bus_dyn.h"
+#define HOSTSIM_HAS_BUS_DYN 1
+#endif
 #if CONFIG_SYNTH_CUSTOM_WT
 #include "custompatches/wt_builder.h"
 #endif
@@ -378,7 +382,16 @@ static void boot(void)
     cfg.platform.multicore = 0;
     cfg.platform.multithread = 0;
     cfg.amy_external_sequencer_hook = seq_tick_hook;
+#ifdef HOSTSIM_HAS_BUS_DYN
+    /* The bus dynamics dispatcher runs the duck, compressor and limiter and
+     * then clip_bounce_bus_hook; without it the Dynamics page edits values
+     * no stage applies. Falls back to the bare bounce hook on firmware trees
+     * that predate bus_dyn. */
+    cfg.amy_external_bus_postprocess_hook = bus_dyn_bus_hook;
+    cfg.amy_external_cv_output_hook = bus_dyn_cv_hook;
+#else
     cfg.amy_external_bus_postprocess_hook = clip_bounce_bus_hook;
+#endif
     cfg.max_sequencer_tags = SEQ_AMY_SEQUENCE_SLOTS;
     /* As main.c, plus one synth above the app's for the lab pages (lab.c's
      * LAB_SYNTH). */
