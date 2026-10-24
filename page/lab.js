@@ -15,9 +15,8 @@ window.LAB = (() => {
   const FM_N = 83, WT_N = 15;
   const HOLD_S = 2.0, SWEEP_S = 3.0, WT_TAIL_S = 0.1, WT_READY_MAX = 64;
   const FM_TAIL_S = 0.3, FM_TAIL_MAX_S = 5.0;   /* after note-off: the control osc releases in 200 ms */
-  /* hostsim halves the engine's output as the device does (hostsim.c), so
-   * the engine's full scale lands here. */
-  const FULL = 16383;
+  /* The engine's full scale in the int16 output (hostsim.c, as on the device). */
+  const FULL = 32767;
   let mod = null, booting = null, chain = Promise.resolve();
 
   /* The single-file page embeds the module and its data in hostsim.js. */

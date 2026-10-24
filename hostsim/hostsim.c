@@ -339,12 +339,7 @@ static void step_block(int16_t *out)
     g_host_cur_task = s_render_task;
     amy_render(0, amy_global.config.max_oscs, 0);
     int16_t *b = amy_fill_buffer();
-    /* AMY's ESP_PLATFORM branch halves each sample after the soft clip; the
-     * host build does not. Halve here so everything downstream (recorder,
-     * bounce, watchdog, the audio out) sees the device's output. */
     for (int i = 0; i < BLOCK_FRAMES * AMY_NCHANS; i++) {
-        int v = b[i];
-        b[i] = (int16_t)(v < 0 ? -((-v) >> 1) : v >> 1);
         s_out_ring[s_out_idx] = b[i];
         s_out_idx = (s_out_idx + 1) % OUT_RING;
     }
