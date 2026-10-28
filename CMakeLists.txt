@@ -96,6 +96,7 @@ set(CF_INC ${R}/stubs ${HOST} ${R}/config ${AMY} ${SC} ${SC}/include
     ${FW}/components/usb_audio/include ${FW}/components/wireless/include
     ${FW}/components/diagnostics/include ${FW}/components/my_buttons/include
     ${FW}/components/harness/include ${FW}/components/project_xfer/include
+    ${FW}/components/ext_ctrl_proto/include
     ${FW}/main ${U8})
 # Source paths in assert messages (__FILE__) ship in the wasm: keep them
 # relative to the firmware or to this repo. The first map covers the AMY
