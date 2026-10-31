@@ -56,6 +56,8 @@
 #include "core_load.h"
 #include "frame_out.h"
 #include "usb_audio.h"
+#include "ui_ext_scheme.h"
+#include "display_ctrl.h"
 #include "load_model.c"
 
 extern int host_drums_load(const char *path);
@@ -88,6 +90,74 @@ static bool s_frame_dirty;
 
 bool i2c_u8g2_service(void) { return false; }
 void display_flush(u8g2_t *u8g2) { (void)u8g2; s_frame_dirty = true; }
+
+/* ── The control module ──────────────────────────────────────────────────
+ * The page's module controls enter the firmware where the UART's INPUT
+ * frames do, ui_ext_scheme_input(), and its screen is drawn by the module's
+ * own renderer from ui_ext_scheme_ctx(): one INPUT frame per block that had
+ * input, the screen once per step. Detached, the inputs only echo on the
+ * module screen, as on the module with no link. */
+static u8g2_t      s_u8g2_ctrl;
+/* The _f setups hand every instance the same static buffer; the module
+ * screen gets its own. */
+static uint8_t     s_ctrl_buf[128 * 64 / 8];
+static bool        s_ctrl_attached = true;
+static ext_input_t s_ctrl_in;
+static int32_t     s_ctrl_total[2];
+static char        s_ctrl_echo[CTRL_ECHO_LINES][CTRL_ECHO_LEN];
+
+static void ctrl_echo(const ext_input_item_t *it)
+{
+    memmove(&s_ctrl_echo[1], &s_ctrl_echo[0], sizeof(s_ctrl_echo) - sizeof(s_ctrl_echo[0]));
+    if (it->kind == EXT_IN_ENC) {
+        snprintf(s_ctrl_echo[0], CTRL_ECHO_LEN, "ENC %c %+d", 'A' + it->index, it->value);
+        if (it->index < 2) s_ctrl_total[it->index] += it->value;
+    } else if (it->index < 4) {
+        snprintf(s_ctrl_echo[0], CTRL_ECHO_LEN, "BTN %u %s", it->index + 1u, it->value ? "down" : "up");
+    } else {
+        snprintf(s_ctrl_echo[0], CTRL_ECHO_LEN, "ENC %c push %s", 'A' + (it->index - 4u),
+                 it->value ? "down" : "up");
+    }
+}
+
+static void ctrl_add(uint8_t kind, uint8_t index, long value)
+{
+    if (value > INT8_MAX) value = INT8_MAX;
+    if (value < -INT8_MAX) value = -INT8_MAX;
+    ext_input_item_t it = { kind, index, (int8_t)value };
+    ctrl_echo(&it);
+    if (s_ctrl_in.count < EXT_INPUT_MAX) s_ctrl_in.items[s_ctrl_in.count++] = it;
+}
+
+static void ctrl_attach(bool on)
+{
+    if (on == s_ctrl_attached) return;
+    s_ctrl_attached = on;
+    s_ctrl_in.count = 0;
+    if (!on) ui_ext_scheme_reset();
+}
+
+/* The pending INPUT frame into the scheme layer, as the ext_ctrl task does. */
+static void ctrl_apply(void)
+{
+    if (s_ctrl_in.count == 0) return;
+    if (s_ctrl_attached) ui_ext_scheme_input(&s_ctrl_in);
+    s_ctrl_in.count = 0;
+}
+
+static void ctrl_draw(void)
+{
+    ext_ctx_t ctx;
+    if (s_ctrl_attached) ui_ext_scheme_ctx(&ctx);
+    const ctrl_view_t view = {
+        .link_up   = s_ctrl_attached,
+        .uart_ok   = true,
+        .ctx       = &ctx,
+        .enc_total = { s_ctrl_total[0], s_ctrl_total[1] },
+        .echo      = { s_ctrl_echo[0], s_ctrl_echo[1], s_ctrl_echo[2] },
+    };
+    display_ctrl_draw_frame(&s_u8g2_ctrl, &view);
+}
 void display_flush_invalidate(void) { }
 
 /* The USB ring's level peek, over the last rendered output (the output
@@ -324,6 +394,7 @@ static void seq_tick_hook(uint32_t tick) { (void)tick; sequencer_core_service_ti
 static void step_block(int16_t *out)
 {
     input_timers();
+    ctrl_apply();
     host_pump_drain();
     while ((int32_t)(now_ms() - s_ui_next_ms) >= 0) {
         synth_ui_slice(s_ui_phase);
@@ -371,6 +442,14 @@ static void boot(void)
     u8g2_Setup_ssd1315_i2c_128x64_noname_f(&s_u8g2, U8G2_R0, u8x8_byte_empty, u8x8_dummy_cb);
     u8g2_InitDisplay(&s_u8g2);
     u8g2_SetPowerSave(&s_u8g2, 0);
+    u8g2_Setup_ssd1315_i2c_128x64_noname_f(&s_u8g2_ctrl, U8G2_R0, u8x8_byte_empty, u8x8_dummy_cb);
+    s_u8g2_ctrl.tile_buf_ptr = s_ctrl_buf;   /* u8g2_SetBufferPtr is behind U8G2_USE_DYNAMIC_ALLOC */
+    u8g2_InitDisplay(&s_u8g2_ctrl);
+    u8g2_SetPowerSave(&s_u8g2_ctrl, 0);
+    s_ctrl_attached = true;
+    s_ctrl_in.count = 0;
+    memset(s_ctrl_total, 0, sizeof s_ctrl_total);
+    memset(s_ctrl_echo, 0, sizeof s_ctrl_echo);
 
     amy_config_t cfg = amy_default_config();
     cfg.audio = AMY_AUDIO_IS_NONE;
@@ -644,6 +723,12 @@ static void parse_input_line(const char *line, unsigned blocks)
         e->kind = 'k'; e->down = strcmp(act, "down") == 0;
     } else if (sscanf(line, "enc %u %ld", &off, &e->delta) == 2) {
         e->kind = 'e';
+    } else if (sscanf(line, "mkey %u %d %7s", &off, &e->id, act) == 3) {
+        e->kind = 'M'; e->down = strcmp(act, "down") == 0;
+    } else if (sscanf(line, "menc %u %d %ld", &off, &e->id, &e->delta) == 3) {
+        e->kind = 'E';
+    } else if (sscanf(line, "mlink %u %d", &off, &e->id) == 2) {
+        e->kind = 'L';
     } else if (sscanf(line, "cmd %u %n", &off, &used) == 1 && used > 0) {
         e->kind = 'c'; e->cmd = strdup(line + used);
     } else {
@@ -675,6 +760,9 @@ static void step_request(unsigned blocks)
             if (s_ev[k].off != b) continue;
             if (s_ev[k].kind == 'k') key_event(s_ev[k].id, s_ev[k].down);
             else if (s_ev[k].kind == 'e') s_enc_accum += s_ev[k].delta;
+            else if (s_ev[k].kind == 'M') { if (s_ev[k].id >= 0 && s_ev[k].id < 6) ctrl_add(EXT_IN_BTN, (uint8_t)s_ev[k].id, s_ev[k].down); }
+            else if (s_ev[k].kind == 'E') { if (s_ev[k].id >= 0 && s_ev[k].id < 2 && s_ev[k].delta) ctrl_add(EXT_IN_ENC, (uint8_t)s_ev[k].id, s_ev[k].delta); }
+            else if (s_ev[k].kind == 'L') ctrl_attach(s_ev[k].id != 0);
             else { run_command(s_ev[k].cmd); free(s_ev[k].cmd); s_ev[k].cmd = NULL; }
         }
         step_block(s_ans_audio + (size_t)b * BLOCK_FRAMES * AMY_NCHANS);
@@ -699,6 +787,7 @@ static void step_request(unsigned blocks)
 
     frame_t f = current_frame();
     s_ans_frame_bytes = s_frame_dirty ? (size_t)f.tile_w * f.tile_h * 8 : 0;
+    ctrl_draw();
     s_ans_audio_bytes = need * sizeof(int16_t);
     s_frame_dirty = false;
 }
@@ -818,5 +907,11 @@ EMSCRIPTEN_KEEPALIVE const uint8_t *hs_frame(void) { return current_frame().buf;
 EMSCRIPTEN_KEEPALIVE int hs_frame_len(void) { return (int)s_ans_frame_bytes; }
 EMSCRIPTEN_KEEPALIVE const int16_t *hs_audio(void) { return s_ans_audio; }
 EMSCRIPTEN_KEEPALIVE int hs_audio_len(void) { return (int)s_ans_audio_bytes; }
+/* The control module's screen after the step, same layout as hs_frame. */
+EMSCRIPTEN_KEEPALIVE const uint8_t *hs_ctrl_frame(void) { return u8g2_GetBufferPtr(&s_u8g2_ctrl); }
+EMSCRIPTEN_KEEPALIVE int hs_ctrl_frame_len(void)
+{
+    return (int)(u8g2_GetBufferTileWidth(&s_u8g2_ctrl) * u8g2_GetBufferTileHeight(&s_u8g2_ctrl) * 8);
+}
 
 #endif

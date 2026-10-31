@@ -209,7 +209,7 @@ set(PRELOAD --preload-file ${DRUMS}@${DRUMS_AT})
 set(LF -lm -sMODULARIZE=1 -sEXPORT_NAME=createHostsim -sALLOW_MEMORY_GROWTH=1
     -sINITIAL_MEMORY=64MB -sSTACK_SIZE=${HOSTSIM_WASM_STACK} --no-entry
     -sINCOMING_MODULE_JS_API=wasmBinary,getPreloadedPackage,locateFile,print,printErr
-    -sEXPORTED_FUNCTIONS=_hs_boot,_hs_step,_hs_json,_hs_json_len,_hs_frame,_hs_frame_len,_hs_audio,_hs_audio_len,_malloc,_free,${LAB_EXPORTS})
+    -sEXPORTED_FUNCTIONS=_hs_boot,_hs_step,_hs_json,_hs_json_len,_hs_frame,_hs_frame_len,_hs_audio,_hs_audio_len,_hs_ctrl_frame,_hs_ctrl_frame_len,_malloc,_free,${LAB_EXPORTS})
 set(RT FS,HEAPU8,HEAP16,HEAPF64,UTF8ToString,stringToNewUTF8)
 # hs_link(<dir> <outputs> <flags...>): link the module into <dir>/hostsim.js.
 function(hs_link dir outputs)

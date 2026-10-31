@@ -148,6 +148,8 @@ window.EMU_WASM = (() => {
     const fp = mod._hs_frame(), fl = mod._hs_frame_len();
     const ap = mod._hs_audio(), al = mod._hs_audio_len();
     st.frame = fl ? mod.HEAPU8.slice(fp, fp + fl) : null;
+    const cp = mod._hs_ctrl_frame(), cl = mod._hs_ctrl_frame_len();
+    st.ctrlFrame = cl ? mod.HEAPU8.slice(cp, cp + cl) : null;
     st.audio = mod.HEAPU8.slice(ap, ap + al);
     st.restarted = false;
     log.push(...st.record.split('\n').filter(Boolean));

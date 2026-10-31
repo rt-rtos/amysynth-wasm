@@ -101,11 +101,19 @@ Requests on stdin, one at a time:
     step <blocks>
     key <offset> <id> down|up
     enc <offset> <detents>
+    mkey <offset> <index> down|up
+    menc <offset> <encoder> <detents>
+    mlink <offset> 0|1
     cmd <offset> <harness command>
     .
 
 `<offset>` is the block within the step at which the input applies (clamped
-to the step). `quit` ends the program. Each request is answered on stdout:
+to the step). `quit` ends the program. The `m` lines are the external
+control module's: `mkey` a button edge (index 0-3 the panel buttons, 4 and 5
+the encoder pushes), `menc` detents of encoder 0 or 1, `mlink` attaches or
+detaches the module. They reach the firmware where the UART's INPUT frames
+do (`ui_ext_scheme_input()`), one frame per block that had input; detached,
+they only echo on the module screen. Each request is answered on stdout:
 
     ok <json_bytes> <frame_bytes> <audio_bytes>\n<json><frame><audio>
 
@@ -119,6 +127,11 @@ to the step). `quit` ends the program. Each request is answered on stdout:
   `(y >> 3) * 128 + x`, bit `y & 7`) when a UI slice flushed since the last
   answer, else 0 bytes.
 - audio: the step's blocks, 16-bit stereo interleaved, 48 kHz.
+
+The WebAssembly build also exports the control module's screen after the
+step (`hs_ctrl_frame`, 1024 bytes in the same layout), drawn by the
+module's own renderer (`components/display/display_ctrl.c`) from the
+scheme layer's CTX, or "NO LINK" with the input echo while detached.
 
 A malformed request is answered `err ...`. Anything the firmware prints to
 stdout outside a command goes to stderr.
