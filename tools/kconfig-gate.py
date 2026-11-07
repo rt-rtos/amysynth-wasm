@@ -22,8 +22,9 @@ ATTR = re.compile(r'(bool|int|hex|string|tristate|default|depends on|range)\b')
 def kconfig_files(fw):
     for f in sorted(glob.glob(os.path.join(fw, '**', 'Kconfig*'), recursive=True)):
         rel = os.path.relpath(f, fw)
-        # amy/ is the pristine upstream submodule; the build uses components/amy
-        if not rel.startswith(('amy/', 'managed_components/', 'build/')):
+        # amy/ is the pristine upstream submodule; the build uses components/amy.
+        # ctrl-module/ is the control module's own IDF project; none of it is built here.
+        if not rel.startswith(('amy/', 'ctrl-module/', 'managed_components/', 'build/')):
             yield rel, f
 
 
